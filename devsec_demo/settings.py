@@ -66,6 +66,9 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # CSRF token context processor — makes csrf_token variable available in templates.
+                # Required for proper CSRF protection, especially for manual token rendering.
+                'django.template.context_processors.csrf',
                 # Injects user_role, is_instructor_plus, is_admin into every template.
                 'kayigamba_david.rbac.rbac_context',
             ],
