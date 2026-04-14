@@ -27,6 +27,7 @@ urlpatterns = [
     path('dashboard/',       _R(url='/auth/dashboard/',       permanent=False)),
     path('profile/',         _R(url='/auth/profile/',         permanent=False)),
     path('change-password/', _R(url='/auth/password/change/', permanent=False)),
+    path('reset-password/',  _R(url='/auth/password/reset/', permanent=False)),
     path('instructor/',      _R(url='/auth/instructor/',      permanent=False)),
     path('admin-panel/',     _R(url='/auth/admin-panel/',     permanent=False)),
 ]

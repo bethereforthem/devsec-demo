@@ -132,8 +132,9 @@
           </div>
         </form>
       </div>
-      <div class="card__footer">
-        No account yet? <a href="{% url 'kayigamba_david:register' %}">Create one free</a>
+      <div class="card__footer" style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:.4rem;">
+        <span>No account yet? <a href="{% url 'kayigamba_david:register' %}">Create one free</a></span>
+        <a href="{% url 'kayigamba_david:password_reset' %}">Forgot password?</a>
       </div>
     </div>
 

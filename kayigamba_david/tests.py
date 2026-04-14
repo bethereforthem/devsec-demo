@@ -427,6 +427,181 @@ class PrivilegeEscalationTests(TestCase):
                 self.assertNotEqual(response.status_code, 200)
 
 
+# ── Password Reset ────────────────────────────────────────────────────────────
+
+class PasswordResetTests(TestCase):
+    """
+    Tests for the 4-step password reset workflow.
+
+    Security focus:
+    - User enumeration prevention (same response for any email)
+    - Token validity and one-time-use enforcement
+    - Password validation on the confirm step
+    - Expired / tampered token produces a clear error, not a traceback
+    """
+
+    def setUp(self):
+        self.user = create_user(username='resetuser', email='reset@example.com')
+        self.request_url  = reverse('kayigamba_david:password_reset')
+        self.done_url     = reverse('kayigamba_david:password_reset_done')
+        self.complete_url = reverse('kayigamba_david:password_reset_complete')
+
+    # ── Step 1: request page ──────────────────────────────────────────────────
+
+    def test_reset_request_page_loads(self):
+        response = self.client.get(self.request_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'reset')
+
+    def test_reset_request_valid_email_redirects_to_done(self):
+        response = self.client.post(self.request_url, {'email': 'reset@example.com'})
+        self.assertRedirects(response, self.done_url)
+
+    def test_reset_request_unknown_email_also_redirects_to_done(self):
+        """
+        User enumeration prevention: an unregistered email must produce
+        exactly the same HTTP response as a registered one — no difference
+        the attacker can observe.
+        """
+        response = self.client.post(self.request_url, {'email': 'ghost@nowhere.com'})
+        self.assertRedirects(response, self.done_url)
+
+    def test_reset_request_sends_email_for_registered_address(self):
+        from django.core import mail
+        self.client.post(self.request_url, {'email': 'reset@example.com'})
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn('reset@example.com', mail.outbox[0].to)
+
+    def test_reset_request_sends_no_email_for_unknown_address(self):
+        """
+        No email must be sent for an address not in the database.
+        Silent no-op preserves enumeration safety.
+        """
+        from django.core import mail
+        self.client.post(self.request_url, {'email': 'ghost@nowhere.com'})
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_reset_email_contains_reset_link(self):
+        from django.core import mail
+        self.client.post(self.request_url, {'email': 'reset@example.com'})
+        self.assertEqual(len(mail.outbox), 1)
+        body = mail.outbox[0].body
+        self.assertIn('/auth/password/reset/', body)
+
+    # ── Step 2: done page ─────────────────────────────────────────────────────
+
+    def test_reset_done_page_loads(self):
+        response = self.client.get(self.done_url)
+        self.assertEqual(response.status_code, 200)
+
+    # ── Step 3: confirm page (token link) ────────────────────────────────────
+
+    def _get_confirm_url(self):
+        """Build a valid confirm URL for self.user using Django's token generator."""
+        from django.contrib.auth.tokens import default_token_generator
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+        uid   = urlsafe_base64_encode(force_bytes(self.user.pk))
+        token = default_token_generator.make_token(self.user)
+        return reverse('kayigamba_david:password_reset_confirm',
+                       kwargs={'uidb64': uid, 'token': token})
+
+    def test_reset_confirm_valid_token_redirects_to_stable_url(self):
+        """
+        Django validates the token on the first GET, stores it in the
+        session, and redirects to a stable URL that hides the token from
+        HTTP Referer headers.
+        """
+        r = self.client.get(self._get_confirm_url())
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('set-password', r['Location'])
+
+    def test_reset_confirm_valid_token_sets_new_password(self):
+        r1 = self.client.get(self._get_confirm_url())
+        self.assertEqual(r1.status_code, 302)
+
+        r2 = self.client.post(r1['Location'], {
+            'new_password1': 'BrandNewPass123!',
+            'new_password2': 'BrandNewPass123!',
+        })
+        self.assertRedirects(r2, self.complete_url)
+
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('BrandNewPass123!'))
+
+    def test_reset_confirm_invalid_token_shows_invalid_link_page(self):
+        """
+        A tampered or expired token must render the confirm template with
+        validlink=False — never a 500 or traceback.
+        """
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+        uid = urlsafe_base64_encode(force_bytes(self.user.pk))
+        url = reverse('kayigamba_david:password_reset_confirm',
+                      kwargs={'uidb64': uid, 'token': 'bad-token-xyz'})
+        r = self.client.get(url)
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.context['validlink'])
+
+    def test_reset_confirm_password_mismatch_rejected(self):
+        r1 = self.client.get(self._get_confirm_url())
+        self.assertEqual(r1.status_code, 302)
+
+        r2 = self.client.post(r1['Location'], {
+            'new_password1': 'BrandNewPass123!',
+            'new_password2': 'TotallyDifferent999!',
+        })
+        self.assertEqual(r2.status_code, 200)
+        self.assertFalse(r2.context['form'].is_valid())
+
+    def test_reset_confirm_weak_password_rejected(self):
+        """Password validators must apply during reset, not just registration."""
+        r1 = self.client.get(self._get_confirm_url())
+        self.assertEqual(r1.status_code, 302)
+
+        r2 = self.client.post(r1['Location'], {
+            'new_password1': '12345678',   # fails CommonPasswordValidator
+            'new_password2': '12345678',
+        })
+        self.assertEqual(r2.status_code, 200)
+        self.assertFalse(r2.context['form'].is_valid())
+
+    def test_reset_token_invalidated_after_use(self):
+        """
+        After a successful reset, the same token must not work again.
+        This enforces one-time-use: the token is tied to the old password
+        hash, which changes on reset.
+        """
+        confirm_url = self._get_confirm_url()
+
+        # First use — valid.
+        r1 = self.client.get(confirm_url)
+        self.client.post(r1['Location'], {
+            'new_password1': 'FirstNewPass123!',
+            'new_password2': 'FirstNewPass123!',
+        })
+
+        # Second use — same token, new session.
+        self.client.logout()
+        r2 = self.client.get(confirm_url)
+        self.assertEqual(r2.status_code, 200)
+        self.assertFalse(r2.context['validlink'])
+
+    # ── Step 4: complete page ─────────────────────────────────────────────────
+
+    def test_reset_complete_page_loads(self):
+        response = self.client.get(self.complete_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Sign In')
+
+    # ── Login page link ───────────────────────────────────────────────────────
+
+    def test_login_page_has_forgot_password_link(self):
+        response = self.client.get(reverse('kayigamba_david:login'))
+        self.assertContains(response, 'Forgot password')
+        self.assertContains(response, reverse('kayigamba_david:password_reset'))
+
+
 # ── IDOR & Broken Access Control ─────────────────────────────────────────────
 
 class IDORProtectionTests(TestCase):

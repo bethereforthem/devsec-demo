@@ -123,6 +123,19 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# ── Email ─────────────────────────────────────────────────────────────────────
+# Console backend prints emails to the terminal instead of sending them.
+# Override via DJANGO_EMAIL_BACKEND env var in production (use smtp backend).
+EMAIL_BACKEND = os.environ.get(
+    'DJANGO_EMAIL_BACKEND',
+    'django.core.mail.backends.console.EmailBackend',
+)
+DEFAULT_FROM_EMAIL = os.environ.get('DJANGO_DEFAULT_FROM_EMAIL', 'SYS_UAS <noreply@sys-uas.local>')
+
+# Reset tokens expire after 1 hour.  Django's default is 3 days (259 200 s).
+# A shorter window limits exposure if a reset link is forwarded or cached.
+PASSWORD_RESET_TIMEOUT = int(os.environ.get('DJANGO_PASSWORD_RESET_TIMEOUT', '3600'))
+
 # ── Authentication redirects ──────────────────────────────────────────────────
 # LOGIN_URL: where @login_required sends unauthenticated users.
 LOGIN_URL = '/auth/login/'
