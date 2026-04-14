@@ -27,9 +27,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DJANGO_DEBUG')
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False').strip().lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 
 
 # Application definition
@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'kayigamba_david',
 ]
 
 MIDDLEWARE = [
@@ -119,3 +120,15 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# ── Authentication redirects ──────────────────────────────────────────────────
+# LOGIN_URL: where @login_required sends unauthenticated users.
+LOGIN_URL = '/auth/login/'
+# LOGIN_REDIRECT_URL: fallback redirect after login when no ?next= param.
+LOGIN_REDIRECT_URL = '/auth/dashboard/'
+# LOGOUT_REDIRECT_URL: where to send users after logout (not used by our view,
+# but good practice to set for any third-party middleware).
+LOGOUT_REDIRECT_URL = '/auth/login/'
+
+# ── Default primary key ───────────────────────────────────────────────────────
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
