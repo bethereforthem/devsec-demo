@@ -1,58 +1,57 @@
-name: Bug report
-description: Report a defect or unexpected behavior
-title: "[Bug]: "
-labels:
-  - bug
+name: Security bug fix task
+description: Create a student assignment to patch a web security bug
+title: "[Security Bug Task]: "
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug. Please provide enough detail for us to reproduce and investigate it.
+        Use this template to assign students a bug-fix task related to web security.
   - type: textarea
-    id: summary
+    id: objective
     attributes:
-      label: Summary
-      description: Describe the problem you encountered.
-      placeholder: A clear and concise description of the bug.
+      label: Learning objective
+      description: Describe what students should learn by completing this task.
+      placeholder: Practice identifying and fixing a security issue in the Django app.
     validations:
       required: true
   - type: textarea
-    id: steps
+    id: vulnerability
     attributes:
-      label: Steps to reproduce
-      description: List the exact steps needed to reproduce the issue.
+      label: Security topic or vulnerability
+      description: Identify the web security concept involved.
+      placeholder: SQL injection, XSS, CSRF, authentication weakness, insecure headers, or similar.
+    validations:
+      required: true
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Current insecure behavior
+      description: Explain the bug or weakness students need to fix.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: List the requirements that define a complete solution.
       placeholder: |
-        1. Go to ...
-        2. Click on ...
-        3. Observe ...
+        - The vulnerability is removed
+        - Existing behavior still works
+        - The change is explained in the pull request
     validations:
       required: true
   - type: textarea
-    id: expected
+    id: scope
     attributes:
-      label: Expected behavior
-      description: Describe what you expected to happen.
-    validations:
-      required: true
-  - type: textarea
-    id: actual
-    attributes:
-      label: Actual behavior
-      description: Describe what actually happened.
-    validations:
-      required: true
-  - type: textarea
-    id: environment
-    attributes:
-      label: Environment details
-      description: Share any relevant environment, browser, OS, or version details.
-      placeholder: Python version, OS, browser, deployment target, and any other helpful context.
+      label: Scope and hints
+      description: Share relevant files, routes, components, or hints students should review.
+      placeholder: Mention likely files, endpoints, or setup notes.
     validations:
       required: false
   - type: textarea
     id: additional-context
     attributes:
       label: Additional context
-      description: Add any screenshots, logs, or related details.
+      description: Add reproduction details, screenshots, references, or classroom notes.
     validations:
       required: false
