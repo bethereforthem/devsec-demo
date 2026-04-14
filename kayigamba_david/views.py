@@ -24,6 +24,9 @@ def register_view(request):
     Handle user registration.
     On success: create user + profile, log in immediately, redirect to dashboard.
     The post_save signal in models.py auto-assigns the Member group.
+    
+    SECURITY: No user-controlled redirect parameter accepted. Redirect target
+    is hardcoded to 'dashboard' — this is safe-by-default against open redirects.
     """
     if request.user.is_authenticated:
         return redirect('kayigamba_david:dashboard')
@@ -85,10 +88,31 @@ def login_view(request):
             record_attempt(username, ip, succeeded=True)
             clear_failures(username, ip)
             messages.success(request, f'Welcome back, {user.username}!')
-            # Honour ?next= only when it is a safe, same-host path.
-            # startswith('/') is insufficient — //evil.com also starts with '/'
-            # and browsers treat it as a protocol-relative external URL.
-            # url_has_allowed_host_and_scheme() rejects those cases.
+            
+            # SECURITY: Open Redirect Protection (CWE-601)
+            # Honour ?next= parameter only for safe, same-host internal paths.
+            # Prevents attackers from redirecting users to phishing sites via:
+            #   - Absolute URLs: http://attacker.com/steal
+            #   - Protocol-relative URLs: //evil.com/phish (also starts with /)
+            #   - Javascript protocols: javascript:alert('xss')
+            #   - Data URLs: data:text/html,<script>alert('xss')</script>
+            #
+            # url_has_allowed_host_and_scheme() validates:
+            #   ✅ Host matches request.get_host() (same domain only)
+            #   ✅ Scheme matches context (HTTPS if secure, allows HTTP if not)
+            #   ❌ Blocks all absolute external URLs
+            #   ❌ Blocks protocol-relative URLs (//evil.com is not //)
+            #   ❌ Blocks non-standard schemes
+            #
+            # Safe Redirects (allowed):
+            #   - /dashboard/
+            #   - /profile/
+            #   - /help/?topic=login
+            #
+            # Attack Attempts (blocked, falls back to dashboard):
+            #   - //evil.com/steal
+            #   - http://attacker.com
+            #   - https://phishing.com/fake-login
             next_url = request.GET.get('next', '').strip()
             if next_url and url_has_allowed_host_and_scheme(
                 url=next_url,
@@ -96,6 +120,7 @@ def login_view(request):
                 require_https=request.is_secure(),
             ):
                 return redirect(next_url)
+            # Safe default: redirect to dashboard if no valid next param
             return redirect('kayigamba_david:dashboard')
         else:
             record_attempt(username, ip, succeeded=False)
@@ -114,6 +139,10 @@ def login_view(request):
 def logout_view(request):
     """
     Log out only on POST to prevent CSRF-based logout via GET requests.
+    
+    SECURITY: No user-controlled redirect parameter accepted. Redirect target
+    is hardcoded to 'login' — this is safe-by-default against open redirects
+    (CWE-601). No validation needed because there's no user input.
     """
     if request.method == 'POST':
         logout(request)
@@ -134,10 +163,14 @@ def dashboard_view(request):
 
 
 @login_required
+@login_required
 def profile_view(request):
     """
     Allow users to update their own User and UserProfile fields.
     Users can only edit their own profile — no user-id parameter is exposed.
+    
+    SECURITY: Redirect target is hardcoded (safe-by-default against open
+    redirects). No user-controlled redirect parameters are accepted.
     """
     profile = get_object_or_404(UserProfile, user=request.user)
 
@@ -164,6 +197,9 @@ def change_password_view(request):
     """
     Password change using Django's PasswordChangeForm.
     update_session_auth_hash() keeps the user logged in after the change.
+    
+    SECURITY: Redirect target is hardcoded (safe-by-default against open
+    redirects). No user-controlled redirect parameters are accepted.
     """
     if request.method == 'POST':
         form = CustomPasswordChangeForm(request.user, request.POST)
