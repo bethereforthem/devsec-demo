@@ -66,6 +66,8 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # Injects user_role, is_instructor_plus, is_admin into every template.
+                'kayigamba_david.rbac.rbac_context',
             ],
         },
     },

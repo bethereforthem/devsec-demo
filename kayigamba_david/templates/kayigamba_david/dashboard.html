@@ -88,7 +88,13 @@
         Signed in as <strong>{{ user.username }}</strong> &mdash; {{ user.email|default:"no email set" }}
       </div>
     </div>
-    <span class="welcome-banner__badge">&#10003;&nbsp; Authenticated</span>
+    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:.4rem;">
+      <span class="welcome-banner__badge">&#10003;&nbsp; Authenticated</span>
+      {# Role shown in the banner — source: rbac_context processor #}
+      <span style="font-size:.72rem; opacity:.75; letter-spacing:.5px; text-transform:uppercase; font-weight:600;">
+        Role: {{ user_role }}
+      </span>
+    </div>
   </div>
 
   <!-- Stats row -->
@@ -168,6 +174,7 @@
       </div>
       <div class="card__body" style="padding-top:.9rem; padding-bottom:.9rem;">
         <div class="action-list">
+          {# All authenticated users (Member and above) #}
           <a href="{% url 'kayigamba_david:profile' %}" class="action-item" title="Update your name, email and bio">
             <div class="action-item__left">
               <div class="action-item__icon action-item__icon--purple">&#9998;</div>
@@ -178,7 +185,7 @@
             </div>
             <span class="action-item__arrow">&#8250;</span>
           </a>
-          <a href="{% url 'kayigamba_david:change_password' %}" class="action-item" title="Change your account password">
+          <a href="{% url 'kayigamba_david:change_password' %}" class="action-item">
             <div class="action-item__left">
               <div class="action-item__icon action-item__icon--green">&#128274;</div>
               <div>
@@ -188,6 +195,34 @@
             </div>
             <span class="action-item__arrow">&#8250;</span>
           </a>
+
+          {# Instructor panel — only shown to Instructor role and above #}
+          {% if is_instructor_plus %}
+          <a href="{% url 'kayigamba_david:instructor_panel' %}" class="action-item" style="border-color:#bfdbfe;">
+            <div class="action-item__left">
+              <div class="action-item__icon" style="background:#dbeafe;">&#127979;</div>
+              <div>
+                <div class="action-item__title" style="color:#1e40af;">Instructor Panel</div>
+                <div class="action-item__desc">View and manage learner accounts</div>
+              </div>
+            </div>
+            <span class="action-item__arrow">&#8250;</span>
+          </a>
+          {% endif %}
+
+          {# Admin panel — only shown to Admin / staff #}
+          {% if is_admin %}
+          <a href="{% url 'kayigamba_david:admin_panel' %}" class="action-item" style="border-color:#fbcfe8;">
+            <div class="action-item__left">
+              <div class="action-item__icon" style="background:#fce7f3;">&#9881;</div>
+              <div>
+                <div class="action-item__title" style="color:#9d174d;">Admin Panel</div>
+                <div class="action-item__desc">Full user management &amp; system overview</div>
+              </div>
+            </div>
+            <span class="action-item__arrow">&#8250;</span>
+          </a>
+          {% endif %}
         </div>
       </div>
     </div>

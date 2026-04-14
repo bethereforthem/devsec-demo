@@ -1,11 +1,13 @@
 """
-Management command: seed 5 demo users for testing/demonstration.
+Management command: seed 5 demo users with RBAC groups for testing.
 
 Usage:
     python manage.py seed_users
     python manage.py seed_users --reset   # delete all non-superuser accounts first
+
+Run setup_roles before this command so groups exist.
 """
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Group, User
 from django.core.management.base import BaseCommand
 
 from kayigamba_david.models import UserProfile
@@ -19,6 +21,7 @@ SEED_USERS = [
         'last_name':  'Kayitesi',
         'email':      'alice@uas.dev',
         'bio':        'Full-stack developer with a passion for clean code and web security.',
+        'group':      'Member',    # standard user
     },
     {
         'username':   'bob_muk',
@@ -26,13 +29,15 @@ SEED_USERS = [
         'last_name':  'Mukama',
         'email':      'bob@uas.dev',
         'bio':        'Backend engineer specialising in Django and REST APIs.',
+        'group':      'Member',
     },
     {
         'username':   'claire_nd',
         'first_name': 'Claire',
         'last_name':  'Ndinganiye',
         'email':      'claire@uas.dev',
-        'bio':        'Security researcher interested in authentication protocols.',
+        'bio':        'Security researcher — can access the instructor panel.',
+        'group':      'Instructor',  # elevated role
     },
     {
         'username':   'david_kay',
@@ -40,26 +45,28 @@ SEED_USERS = [
         'last_name':  'Kayigamba',
         'email':      'david@uas.dev',
         'bio':        'Project author — Level 3 Web Security, Semester II.',
-        'is_staff':   True,   # demo admin-lite user
+        'group':      'Admin',       # admin role, also is_staff=True
+        'is_staff':   True,
     },
     {
         'username':   'eve_nk',
         'first_name': 'Eve',
         'last_name':  'Nkurunziza',
         'email':      'eve@uas.dev',
-        'bio':        'UI/UX designer who loves Django templates.',
+        'bio':        'UI/UX designer — standard member access.',
+        'group':      'Member',
     },
 ]
 
 
 class Command(BaseCommand):
-    help = 'Seed 5 demo users with password "pass@123"'
+    help = 'Seed 5 demo users with RBAC groups assigned (password: pass@123).'
 
     def add_arguments(self, parser):
         parser.add_argument(
             '--reset',
             action='store_true',
-            help='Delete all existing non-superuser accounts before seeding.',
+            help='Delete all non-superuser accounts before seeding.',
         )
 
     def handle(self, *args, **options):
@@ -72,6 +79,7 @@ class Command(BaseCommand):
 
         for data in SEED_USERS:
             username = data['username']
+
             if User.objects.filter(username=username).exists():
                 self.stdout.write(f'  [skip]    {username} already exists')
                 skipped_count += 1
@@ -85,9 +93,18 @@ class Command(BaseCommand):
                 email=data['email'],
                 is_staff=data.get('is_staff', False),
             )
-            UserProfile.objects.create(user=user, bio=data.get('bio', ''))
+            UserProfile.objects.get_or_create(user=user, defaults={'bio': data.get('bio', '')})
+
+            # Assign the designated group (in addition to Member auto-assigned by signal).
+            group_name = data.get('group', 'Member')
+            if group_name != 'Member':
+                # Member was already assigned by the post_save signal.
+                group, _ = Group.objects.get_or_create(name=group_name)
+                user.groups.add(group)
+
             self.stdout.write(self.style.SUCCESS(
-                f'  [created] {username} ({data["first_name"]} {data["last_name"]}) — {data["email"]}'
+                f'  [created] {username} ({data["first_name"]} {data["last_name"]}) '
+                f'— role: {group_name}'
             ))
             created_count += 1
 

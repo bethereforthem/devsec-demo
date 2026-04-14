@@ -1,0 +1,346 @@
+{% extends "kayigamba_david/base.html" %}
+{% block title %}Admin Panel{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Panel shell ─────────────────────────────────────────────── */
+  .panel-shell {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 1.5rem;
+    align-items: start;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+
+  /* ── Sidebar ─────────────────────────────────────────────────── */
+  .panel-sidebar {
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,.07);
+    overflow: hidden;
+    position: sticky;
+    top: 78px;
+  }
+  .sidebar-head {
+    background: linear-gradient(135deg, #831843 0%, #9d174d 100%);
+    padding: 1.2rem 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+  }
+  .sidebar-head__icon {
+    width: 36px; height: 36px;
+    background: rgba(255,255,255,.18);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+  .sidebar-head__title { color: #fff; font-weight: 700; font-size: .92rem; line-height: 1.2; }
+  .sidebar-head__role  { color: rgba(255,255,255,.7); font-size: .72rem; margin-top: .1rem; }
+
+  .sidebar-nav { padding: .5rem 0; }
+  .sidebar-nav__label {
+    padding: .5rem 1.25rem .25rem;
+    font-size: .68rem;
+    font-weight: 700;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: .6px;
+  }
+  .sidebar-link {
+    display: flex;
+    align-items: center;
+    gap: .7rem;
+    padding: .6rem 1.25rem;
+    font-size: .875rem;
+    font-weight: 500;
+    color: #4b5563;
+    text-decoration: none;
+    transition: background .15s, color .15s, padding-left .15s;
+    position: relative;
+  }
+  .sidebar-link:hover { background: #fff1f2; color: #9d174d; text-decoration: none; padding-left: 1.5rem; }
+  .sidebar-link--active {
+    background: #fdf2f8;
+    color: #9d174d;
+    font-weight: 600;
+    border-right: 3px solid #9d174d;
+  }
+  .sidebar-link__icon { font-size: 1rem; flex-shrink: 0; width: 18px; text-align: center; }
+  .sidebar-link__count {
+    margin-left: auto;
+    background: #fce7f3;
+    color: #9d174d;
+    font-size: .68rem;
+    font-weight: 700;
+    padding: .1rem .45rem;
+    border-radius: 99px;
+  }
+  .sidebar-divider { border: none; border-top: 1px solid #f3f4f6; margin: .4rem 0; }
+
+  /* ── Main content ────────────────────────────────────────────── */
+  .panel-main { display: flex; flex-direction: column; gap: 1.25rem; }
+
+  /* Header card */
+  .panel-banner {
+    background: linear-gradient(120deg, #831843 0%, #9d174d 55%, #be185d 100%);
+    border-radius: 12px;
+    padding: 1.5rem 1.75rem;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    box-shadow: 0 6px 24px rgba(157,23,77,.28);
+    position: relative;
+    overflow: hidden;
+  }
+  .panel-banner::before {
+    content: ''; position: absolute; top: -25px; right: -25px;
+    width: 120px; height: 120px; border-radius: 50%;
+    background: rgba(255,255,255,.06); pointer-events: none;
+  }
+  .panel-banner__title { font-size: 1.2rem; font-weight: 700; }
+  .panel-banner__sub   { font-size: .82rem; opacity: .8; margin-top: .15rem; }
+  .panel-banner__badge {
+    background: rgba(255,255,255,.15);
+    border: 1px solid rgba(255,255,255,.25);
+    padding: .3rem .9rem;
+    border-radius: 99px;
+    font-size: .72rem;
+    font-weight: 600;
+    letter-spacing: .4px;
+    white-space: nowrap;
+  }
+
+  /* Stats row */
+  .panel-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: .9rem; }
+  .panel-stat {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    transition: box-shadow .2s, transform .2s, border-color .2s;
+  }
+  .panel-stat:hover { box-shadow: 0 4px 14px rgba(157,23,77,.10); transform: translateY(-2px); border-color: #fce7f3; }
+  .panel-stat__icon  { font-size: 1.2rem; margin-bottom: .1rem; }
+  .panel-stat__label { font-size: .68rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .5px; }
+  .panel-stat__value { font-size: 1.4rem; font-weight: 700; color: #111827; }
+
+  /* Table card */
+  .data-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+  .data-table thead tr { background: #f8fafc; }
+  .data-table th {
+    text-align: left; padding: .75rem 1rem;
+    font-size: .7rem; font-weight: 700; color: #6b7280;
+    text-transform: uppercase; letter-spacing: .5px;
+    border-bottom: 2px solid #e5e7eb;
+    white-space: nowrap;
+  }
+  .data-table td { padding: .72rem 1rem; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+  .data-table tbody tr { transition: background .14s; }
+  .data-table tbody tr:hover td { background: #fdf2f8; }
+  .data-table tbody tr:last-child td { border-bottom: none; }
+  .staff-row td { background: #fff7f9; }
+  .staff-row:hover td { background: #fce7f3 !important; }
+
+  /* Role pills */
+  .role-pill {
+    display: inline-flex; align-items: center;
+    padding: .22rem .65rem; border-radius: 99px;
+    font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .35px;
+  }
+  .role-pill--member     { background: #d1fae5; color: #065f46; }
+  .role-pill--instructor { background: #dbeafe; color: #1e40af; }
+  .role-pill--admin      { background: #fce7f3; color: #9d174d; }
+  .role-pill--superuser  { background: #fef3c7; color: #92400e; }
+
+  /* Avatar */
+  .cell-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: linear-gradient(135deg, #9d174d, #be185d);
+    color: #fff; font-size: .78rem; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+    margin-right: .6rem; flex-shrink: 0;
+    transition: transform .15s, box-shadow .15s;
+  }
+  .data-table tbody tr:hover .cell-avatar { transform: scale(1.1); box-shadow: 0 2px 8px rgba(157,23,77,.3); }
+
+  .empty-state { text-align: center; padding: 3.5rem; color: #9ca3af; font-size: .9rem; }
+
+  /* Responsive */
+  @media (max-width: 700px) {
+    .panel-shell { grid-template-columns: 1fr; }
+    .panel-sidebar { position: static; }
+    .panel-stats { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+
+<div class="panel-shell">
+
+  <!-- ── Sidebar ── -->
+  <aside class="panel-sidebar">
+    <div class="sidebar-head">
+      <div class="sidebar-head__icon">&#9881;</div>
+      <div>
+        <div class="sidebar-head__title">SYS_UAS</div>
+        <div class="sidebar-head__role">Admin Panel</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="sidebar-nav__label">Navigation</div>
+
+      <a href="{% url 'kayigamba_david:dashboard' %}" class="sidebar-link">
+        <span class="sidebar-link__icon">&#9732;</span>
+        Dashboard
+      </a>
+
+      <a href="{% url 'kayigamba_david:instructor_panel' %}" class="sidebar-link">
+        <span class="sidebar-link__icon">&#128101;</span>
+        Users
+        <span class="sidebar-link__count">{{ total }}</span>
+      </a>
+
+      <hr class="sidebar-divider" />
+      <div class="sidebar-nav__label">Account</div>
+
+      <a href="{% url 'kayigamba_david:profile' %}" class="sidebar-link">
+        <span class="sidebar-link__icon">&#128100;</span>
+        My Profile
+      </a>
+      <a href="{% url 'kayigamba_david:change_password' %}" class="sidebar-link">
+        <span class="sidebar-link__icon">&#128274;</span>
+        Change Password
+      </a>
+
+      <hr class="sidebar-divider" />
+      <div class="sidebar-nav__label">Administration</div>
+
+      <a href="{% url 'kayigamba_david:admin_panel' %}" class="sidebar-link sidebar-link--active">
+        <span class="sidebar-link__icon">&#9881;</span>
+        Admin Panel
+        <span class="sidebar-link__count">{{ total }}</span>
+      </a>
+    </nav>
+  </aside>
+
+  <!-- ── Main content ── -->
+  <main class="panel-main">
+
+    <!-- Banner -->
+    <div class="panel-banner">
+      <div>
+        <div class="panel-banner__title">&#9881; Admin Management Panel</div>
+        <div class="panel-banner__sub">
+          Full user overview — {{ total }} account{{ total|pluralize }} in the system
+        </div>
+      </div>
+      <span class="panel-banner__badge">&#128274; Admin Only</span>
+    </div>
+
+    <!-- Stats -->
+    <div class="panel-stats">
+      <div class="panel-stat">
+        <div class="panel-stat__icon">&#128101;</div>
+        <div class="panel-stat__label">Total Users</div>
+        <div class="panel-stat__value">{{ total }}</div>
+      </div>
+      <div class="panel-stat">
+        <div class="panel-stat__icon">&#9989;</div>
+        <div class="panel-stat__label">Members</div>
+        <div class="panel-stat__value" style="color:#059669;">{{ member_count }}</div>
+      </div>
+      <div class="panel-stat">
+        <div class="panel-stat__icon">&#127979;</div>
+        <div class="panel-stat__label">Instructors</div>
+        <div class="panel-stat__value" style="color:#1d4ed8;">{{ instructor_count }}</div>
+      </div>
+      <div class="panel-stat">
+        <div class="panel-stat__icon">&#9881;</div>
+        <div class="panel-stat__label">Admins / Staff</div>
+        <div class="panel-stat__value" style="color:#9d174d;">{{ staff_count }}</div>
+      </div>
+    </div>
+
+    <!-- Full users table -->
+    <div class="card">
+      <div class="card__header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.6rem;">
+        <h2 class="section-title" style="margin:0;">&#128101; All Accounts</h2>
+        <span class="text-muted text-small">{{ total }} registered user{{ total|pluralize }}</span>
+      </div>
+      <div class="card__body" style="padding:0;">
+        {% if user_rows %}
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>User</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Groups</th>
+                <th>Joined</th>
+                <th>Last Login</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in user_rows %}
+              <tr {% if row.user.is_staff %}class="staff-row"{% endif %}>
+                <td style="color:#9ca3af; font-size:.8rem; width:40px;">{{ forloop.counter }}</td>
+                <td>
+                  <div style="display:flex; align-items:center;">
+                    <span class="cell-avatar">{{ row.user.username|first|upper }}</span>
+                    <div>
+                      <div style="font-weight:600; font-size:.88rem;">
+                        {{ row.user.get_full_name|default:row.user.username }}
+                      </div>
+                      <div style="color:#9ca3af; font-size:.76rem;">@{{ row.user.username }}</div>
+                    </div>
+                  </div>
+                </td>
+                <td style="color:#4b5563;">{{ row.user.email|default:"—" }}</td>
+                <td>
+                  {% if row.role == 'Superuser' %}
+                    <span class="role-pill role-pill--superuser">{{ row.role }}</span>
+                  {% elif row.role == 'Admin' %}
+                    <span class="role-pill role-pill--admin">{{ row.role }}</span>
+                  {% elif row.role == 'Instructor' %}
+                    <span class="role-pill role-pill--instructor">{{ row.role }}</span>
+                  {% else %}
+                    <span class="role-pill role-pill--member">{{ row.role }}</span>
+                  {% endif %}
+                </td>
+                <td style="font-size:.8rem; color:#6b7280;">{{ row.groups }}</td>
+                <td style="color:#6b7280; font-size:.82rem; white-space:nowrap;">
+                  {{ row.user.date_joined|date:"M j, Y" }}
+                </td>
+                <td style="color:#6b7280; font-size:.82rem; white-space:nowrap;">
+                  {{ row.user.last_login|date:"M j, Y"|default:"Never" }}
+                </td>
+                <td>
+                  {% if row.user.is_active %}
+                    <span class="badge badge-success">Active</span>
+                  {% else %}
+                    <span class="badge badge-info">Inactive</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% else %}
+          <div class="empty-state">&#128100; No accounts found.</div>
+        {% endif %}
+      </div>
+    </div>
+
+  </main>
+</div>
+{% endblock %}

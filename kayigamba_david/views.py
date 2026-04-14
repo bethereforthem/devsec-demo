@@ -1,6 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, redirect, render
 
 from .forms import (
@@ -11,12 +12,16 @@ from .forms import (
     UserUpdateForm,
 )
 from .models import UserProfile
+from .rbac import get_user_role, group_required, staff_required
 
+
+# ── Public views (authentication) ────────────────────────────────────────────
 
 def register_view(request):
     """
     Handle user registration.
     On success: create user + profile, log in immediately, redirect to dashboard.
+    The post_save signal in models.py auto-assigns the Member group.
     """
     if request.user.is_authenticated:
         return redirect('kayigamba_david:dashboard')
@@ -25,7 +30,6 @@ def register_view(request):
         form = RegistrationForm(request.POST)
         if form.is_valid():
             user = form.save()
-            # Auto-create profile so profile page never 404s.
             UserProfile.objects.create(user=user)
             login(request, user)
             messages.success(request, f'Welcome, {user.username}! Your account has been created.')
@@ -70,21 +74,25 @@ def logout_view(request):
         logout(request)
         messages.info(request, 'You have been logged out.')
         return redirect('kayigamba_david:login')
-    # GET: show confirmation page.
     return render(request, 'kayigamba_david/logout.html')
 
 
+# ── Member views (any authenticated user) ────────────────────────────────────
+
 @login_required
 def dashboard_view(request):
-    """Protected dashboard — requires authentication."""
-    return render(request, 'kayigamba_david/dashboard.html', {'user': request.user})
+    """Protected dashboard — requires authentication (Member role and above)."""
+    return render(request, 'kayigamba_david/dashboard.html', {
+        'user': request.user,
+        'user_role': get_user_role(request.user),
+    })
 
 
 @login_required
 def profile_view(request):
     """
-    Allow users to update their User fields and UserProfile fields together.
-    Uses two forms submitted in a single POST.
+    Allow users to update their own User and UserProfile fields.
+    Users can only edit their own profile — no user-id parameter is exposed.
     """
     profile = get_object_or_404(UserProfile, user=request.user)
 
@@ -116,7 +124,6 @@ def change_password_view(request):
         form = CustomPasswordChangeForm(request.user, request.POST)
         if form.is_valid():
             user = form.save()
-            # Rotate session hash so the current session stays valid.
             update_session_auth_hash(request, user)
             messages.success(request, 'Your password has been changed successfully.')
             return redirect('kayigamba_david:profile')
@@ -124,3 +131,62 @@ def change_password_view(request):
         form = CustomPasswordChangeForm(request.user)
 
     return render(request, 'kayigamba_david/change_password.html', {'form': form})
+
+
+# ── Instructor views (Instructor group and above) ─────────────────────────────
+
+@group_required('Instructor')
+def instructor_panel_view(request):
+    """
+    Instructor panel — accessible to Instructor group members and all staff.
+    Shows a read-only list of all non-superuser accounts with their roles.
+    @group_required('Instructor') also allows staff/superusers through.
+    """
+    users = (
+        User.objects
+        .filter(is_superuser=False)
+        .select_related('profile')
+        .prefetch_related('groups')
+        .order_by('username')
+    )
+    # Annotate each user with their display role for the template.
+    user_rows = [
+        {'user': u, 'role': get_user_role(u)}
+        for u in users
+    ]
+    return render(request, 'kayigamba_david/instructor_panel.html', {
+        'user_rows': user_rows,
+        'total': len(user_rows),
+    })
+
+
+# ── Admin views (staff / Admin role only) ─────────────────────────────────────
+
+@staff_required
+def admin_panel_view(request):
+    """
+    Admin management panel — restricted to is_staff=True (Admin role).
+    Provides a full user list with group details and account controls.
+    @staff_required returns 403 for authenticated non-staff users — never
+    redirects to login so as not to confirm the URL exists to non-admins.
+    """
+    users = (
+        User.objects
+        .select_related('profile')
+        .prefetch_related('groups')
+        .order_by('-date_joined')
+    )
+    user_rows = [
+        {'user': u, 'role': get_user_role(u), 'groups': ', '.join(g.name for g in u.groups.all()) or '—'}
+        for u in users
+    ]
+    staff_count = sum(1 for u in users if u.is_staff)
+    instructor_count = sum(1 for r in user_rows if r['role'] == 'Instructor')
+    member_count = sum(1 for r in user_rows if r['role'] == 'Member')
+    return render(request, 'kayigamba_david/admin_panel.html', {
+        'user_rows': user_rows,
+        'total': len(user_rows),
+        'staff_count': staff_count,
+        'instructor_count': instructor_count,
+        'member_count': member_count,
+    })

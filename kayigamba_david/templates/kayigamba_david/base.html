@@ -116,6 +116,27 @@
     .nav-link--active { background: var(--brand-light); color: var(--brand); font-weight: 600; }
     .nav-link--active::after { left: 12px; right: 12px; }
 
+    /* Role badge --------------------------------------------------- */
+    .nav-role-badge {
+      padding: .18rem .55rem;
+      border-radius: 99px;
+      font-size: .68rem;
+      font-weight: 700;
+      letter-spacing: .5px;
+      text-transform: uppercase;
+      margin-right: .15rem;
+    }
+    .nav-role-badge--member     { background: #d1fae5; color: #065f46; }
+    .nav-role-badge--instructor { background: #dbeafe; color: #1e40af; }
+    .nav-role-badge--admin      { background: #fce7f3; color: #9d174d; }
+    .nav-role-badge--superuser  { background: #fef3c7; color: #92400e; }
+
+    /* Elevated nav links ------------------------------------------ */
+    .nav-link--elevated { color: #1e40af; font-weight: 600; }
+    .nav-link--elevated:hover { background: #dbeafe; color: #1e3a8a; }
+    .nav-link--admin { color: #9d174d; font-weight: 600; }
+    .nav-link--admin:hover { background: #fce7f3; color: #831843; }
+
     /* Avatar ------------------------------------------------------- */
     .nav-avatar {
       width: 32px; height: 32px; border-radius: 50%;
@@ -490,11 +511,28 @@
 
   <div class="topnav__links">
     {% if user.is_authenticated %}
+      {# Role badge — driven by context processor (rbac_context) #}
+      <span class="nav-role-badge nav-role-badge--{{ user_role|lower }}" title="Your role: {{ user_role }}">
+        {{ user_role }}
+      </span>
       <span class="nav-avatar" title="{{ user.get_full_name|default:user.username }}">
         {{ user.username|first|upper }}
       </span>
       <a href="{% url 'kayigamba_david:dashboard' %}" class="nav-link">Dashboard</a>
       <a href="{% url 'kayigamba_david:profile' %}" class="nav-link">Profile</a>
+
+      {# Users link — visible to Instructor role and above #}
+      {% if is_instructor_plus %}
+        <a href="{% url 'kayigamba_david:instructor_panel' %}" class="nav-link nav-link--elevated"
+           title="View all users">Users</a>
+      {% endif %}
+
+      {# Admin panel link — visible to Admin / staff only #}
+      {% if is_admin %}
+        <a href="{% url 'kayigamba_david:admin_panel' %}" class="nav-link nav-link--admin"
+           title="Admin Management Panel">Admin</a>
+      {% endif %}
+
       <form method="post" action="{% url 'kayigamba_david:logout' %}" class="nav-logout-form">
         {% csrf_token %}
         <button type="submit" class="nav-logout-btn" title="Sign out of SYS_UAS">Sign out</button>
