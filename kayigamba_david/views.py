@@ -3,6 +3,7 @@ from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 
 from .forms import (
     CustomLoginForm,
@@ -54,9 +55,16 @@ def login_view(request):
             user = form.get_user()
             login(request, user)
             messages.success(request, f'Welcome back, {user.username}!')
-            # Honour ?next= param safely (must be a local path).
-            next_url = request.GET.get('next')
-            if next_url and next_url.startswith('/'):
+            # Honour ?next= only when it is a safe, same-host path.
+            # startswith('/') is insufficient — //evil.com also starts with '/'
+            # and browsers treat it as a protocol-relative external URL.
+            # url_has_allowed_host_and_scheme() rejects those cases.
+            next_url = request.GET.get('next', '').strip()
+            if next_url and url_has_allowed_host_and_scheme(
+                url=next_url,
+                allowed_hosts={request.get_host()},
+                require_https=request.is_secure(),
+            ):
                 return redirect(next_url)
             return redirect('kayigamba_david:dashboard')
     else:
@@ -180,9 +188,10 @@ def admin_panel_view(request):
         {'user': u, 'role': get_user_role(u), 'groups': ', '.join(g.name for g in u.groups.all()) or '—'}
         for u in users
     ]
-    staff_count = sum(1 for u in users if u.is_staff)
+    # Derive counts from the already-evaluated list — no second queryset hit.
+    staff_count      = sum(1 for r in user_rows if r['role'] in ('Admin', 'Superuser'))
     instructor_count = sum(1 for r in user_rows if r['role'] == 'Instructor')
-    member_count = sum(1 for r in user_rows if r['role'] == 'Member')
+    member_count     = sum(1 for r in user_rows if r['role'] == 'Member')
     return render(request, 'kayigamba_david/admin_panel.html', {
         'user_rows': user_rows,
         'total': len(user_rows),

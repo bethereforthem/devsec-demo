@@ -427,6 +427,177 @@ class PrivilegeEscalationTests(TestCase):
                 self.assertNotEqual(response.status_code, 200)
 
 
+# ── IDOR & Broken Access Control ─────────────────────────────────────────────
+
+class IDORProtectionTests(TestCase):
+    """
+    Verify that object-level ownership is enforced and that no user can read
+    or modify another user's data.
+
+    None of the current endpoints accept user-controlled IDs — every object
+    lookup is anchored to request.user.  These tests lock that design
+    constraint into the suite so any future regression is caught immediately.
+
+    They also cover the open-redirect fix in login_view: an attacker must not
+    be able to chain a successful login with a redirect to an external domain.
+    """
+
+    def setUp(self):
+        self.alice = create_user(username='alice', email='alice@test.com')
+        self.bob   = create_user(username='bob',   email='bob@test.com')
+        self.profile_url  = reverse('kayigamba_david:profile')
+        self.password_url = reverse('kayigamba_david:change_password')
+        self.login_url    = reverse('kayigamba_david:login')
+
+    # ── Profile ownership ─────────────────────────────────────────────────────
+
+    def test_profile_form_is_bound_to_logged_in_user(self):
+        """
+        GET /profile/ must render a form whose instance is the authenticated
+        user — not a hard-coded ID, not another user.
+        """
+        self.client.login(username='alice', password='StrongPass123!')
+        response = self.client.get(self.profile_url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['user_form'].instance, self.alice)
+        self.assertNotEqual(response.context['user_form'].instance, self.bob)
+
+    def test_profile_update_only_modifies_own_account(self):
+        """
+        POST /profile/ as Alice must never touch Bob's record.
+        Classic IDOR: user A writes data that lands on user B's row.
+        """
+        self.client.login(username='alice', password='StrongPass123!')
+        self.client.post(self.profile_url, {
+            'first_name': 'Injected',
+            'last_name':  'Payload',
+            'email':      'alice@test.com',
+            'bio':        'IDOR attempt',
+        })
+        bob = User.objects.get(username='bob')
+        self.assertNotEqual(bob.first_name, 'Injected')
+        self.assertNotEqual(bob.last_name,  'Payload')
+
+    def test_profile_session_switch_serves_correct_owner(self):
+        """
+        After logging out and back in as a different user, /profile/ must
+        serve that user's data — not a residual context from the prior session.
+        """
+        self.alice.first_name = 'AliceOnly'
+        self.alice.save()
+        self.bob.first_name = 'BobOnly'
+        self.bob.save()
+
+        # Log in as Alice, then switch to Bob.
+        self.client.login(username='alice', password='StrongPass123!')
+        self.client.logout()
+        self.client.login(username='bob', password='StrongPass123!')
+
+        response = self.client.get(self.profile_url)
+        self.assertEqual(response.context['user_form'].instance, self.bob)
+        # Alice's first name must not appear in Bob's form.
+        self.assertNotContains(response, 'AliceOnly')
+
+    # ── Password-change ownership ─────────────────────────────────────────────
+
+    def test_password_change_applies_only_to_authenticated_user(self):
+        """
+        Changing Alice's password must have no effect on Bob's credentials.
+        """
+        self.client.login(username='alice', password='StrongPass123!')
+        self.client.post(self.password_url, {
+            'old_password':  'StrongPass123!',
+            'new_password1': 'AliceNewPass999!',
+            'new_password2': 'AliceNewPass999!',
+        })
+        bob = User.objects.get(username='bob')
+        self.assertTrue(bob.check_password('StrongPass123!'),
+                        'Bob\'s password must remain unchanged after Alice changes hers.')
+        self.assertFalse(bob.check_password('AliceNewPass999!'))
+
+    def test_password_change_form_is_bound_to_session_user(self):
+        """
+        The form passed to the password-change template must be constructed
+        with request.user — confirmed via a failed old-password check.
+        Submitting Bob's old password while logged in as Alice must fail.
+        """
+        # Give Bob a distinct password so we can tell them apart.
+        self.bob.set_password('BobSecret777!')
+        self.bob.save()
+
+        self.client.login(username='alice', password='StrongPass123!')
+        response = self.client.post(self.password_url, {
+            'old_password':  'BobSecret777!',   # Bob's password, not Alice's
+            'new_password1': 'NewPass000!',
+            'new_password2': 'NewPass000!',
+        })
+        # Must reject — the form validates against Alice's password, not Bob's.
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context['form'].is_valid())
+
+    # ── Open-redirect prevention ──────────────────────────────────────────────
+
+    def test_open_redirect_protocol_relative_url_blocked(self):
+        """
+        //evil.com passes the old startswith('/') check but must be rejected
+        by url_has_allowed_host_and_scheme().
+        An attacker cannot chain a successful login with an off-site redirect.
+        """
+        response = self.client.post(
+            f'{self.login_url}?next=//evil.com/steal',
+            {'username': 'alice', 'password': 'StrongPass123!'},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn('evil.com', response['Location'])
+
+    def test_open_redirect_absolute_external_url_blocked(self):
+        """
+        http://attacker.com must never appear as the redirect target.
+        """
+        response = self.client.post(
+            f'{self.login_url}?next=http://attacker.com/phish',
+            {'username': 'alice', 'password': 'StrongPass123!'},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn('attacker.com', response['Location'])
+
+    def test_open_redirect_safe_local_path_still_works(self):
+        """
+        A valid, same-host path in ?next= must still redirect correctly
+        — confirming the fix does not break the legitimate use case.
+        """
+        dashboard = reverse('kayigamba_david:dashboard')
+        response = self.client.post(
+            f'{self.login_url}?next={dashboard}',
+            {'username': 'alice', 'password': 'StrongPass123!'},
+        )
+        self.assertRedirects(response, dashboard)
+
+    def test_open_redirect_no_next_falls_back_to_dashboard(self):
+        """
+        Without a ?next= param the login view must redirect to the dashboard.
+        """
+        response = self.client.post(
+            self.login_url,
+            {'username': 'alice', 'password': 'StrongPass123!'},
+        )
+        self.assertRedirects(response, reverse('kayigamba_david:dashboard'))
+
+    # ── Information isolation ─────────────────────────────────────────────────
+
+    def test_profile_page_does_not_expose_other_users_email(self):
+        """
+        Alice's profile page must not leak Bob's email address.
+        Protects against accidental template context bleed.
+        """
+        self.bob.email = 'supersecret_bob@test.com'
+        self.bob.save()
+
+        self.client.login(username='alice', password='StrongPass123!')
+        response = self.client.get(self.profile_url)
+        self.assertNotContains(response, 'supersecret_bob@test.com')
+
+
 # ── RBAC: Signal — auto Member group assignment ───────────────────────────────
 
 class AutoMemberGroupTests(TestCase):
