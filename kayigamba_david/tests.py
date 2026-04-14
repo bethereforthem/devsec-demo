@@ -427,6 +427,216 @@ class PrivilegeEscalationTests(TestCase):
                 self.assertNotEqual(response.status_code, 200)
 
 
+# ── Brute-force protection ────────────────────────────────────────────────────
+
+class BruteForceProtectionTests(TestCase):
+    """
+    Verify that the login throttle blocks repeated credential abuse while
+    preserving normal access for legitimate users.
+
+    Every test sets HTTP_X_FORWARDED_FOR so get_client_ip() returns a
+    predictable value and IP-level tests are isolated from each other.
+    """
+
+    # ── helpers ───────────────────────────────────────────────────────────────
+
+    def setUp(self):
+        self.url  = reverse('kayigamba_david:login')
+        self.user = create_user(username='victim', email='victim@test.com')
+
+    def _post(self, username='victim', password='wrong', ip='10.0.0.1'):
+        return self.client.post(
+            self.url,
+            {'username': username, 'password': password},
+            HTTP_X_FORWARDED_FOR=ip,
+        )
+
+    def _exhaust_attempts(self, username='victim', ip='10.0.0.1'):
+        """Submit exactly ACCOUNT_LOCKOUT_THRESHOLD wrong attempts."""
+        from kayigamba_david.throttle import ACCOUNT_LOCKOUT_THRESHOLD
+        for _ in range(ACCOUNT_LOCKOUT_THRESHOLD):
+            self._post(username=username, ip=ip)
+
+    # ── normal login (no regression) ─────────────────────────────────────────
+
+    def test_correct_credentials_log_in_immediately(self):
+        r = self._post(password='StrongPass123!')
+        self.assertRedirects(r, reverse('kayigamba_david:dashboard'))
+        self.assertIn('_auth_user_id', self.client.session)
+
+    def test_single_wrong_password_not_locked(self):
+        r = self._post()
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn('_auth_user_id', self.client.session)
+        self.assertNotContains(r, 'locked')
+
+    # ── lockout activation ────────────────────────────────────────────────────
+
+    def test_lockout_activates_at_threshold(self):
+        """
+        The Nth failure (at exactly the threshold) must return a lockout
+        response — no further guessing is possible from that point.
+        """
+        from kayigamba_david.throttle import ACCOUNT_LOCKOUT_THRESHOLD
+        responses = [self._post() for _ in range(ACCOUNT_LOCKOUT_THRESHOLD)]
+        self.assertContains(responses[-1], 'locked')
+
+    def test_correct_password_rejected_during_lockout(self):
+        """
+        Correct credentials submitted during an active lockout must be
+        silently rejected.  The attacker must not be rewarded for finding
+        the right password while under cooldown.
+        """
+        self._exhaust_attempts()
+        r = self._post(password='StrongPass123!')
+        self.assertNotIn('_auth_user_id', self.client.session)
+        self.assertContains(r, 'locked')
+
+    def test_locked_response_does_not_record_new_failure(self):
+        """
+        Requests that arrive during a lockout must not add new failure rows —
+        this prevents the lockout window from being indefinitely extended by
+        continued hammering.
+        """
+        from kayigamba_david.models import LoginAttempt
+        from kayigamba_david.throttle import ACCOUNT_LOCKOUT_THRESHOLD
+
+        self._exhaust_attempts()
+        count_before = LoginAttempt.objects.filter(username='victim').count()
+
+        self._post()  # arrives during lockout
+        count_after = LoginAttempt.objects.filter(username='victim').count()
+
+        self.assertEqual(count_before, count_after)
+
+    # ── warning banner ────────────────────────────────────────────────────────
+
+    def test_warning_shown_when_two_attempts_remain(self):
+        """
+        With 2 attempts remaining the template must render a warning banner
+        so legitimate users know they are close to being locked out.
+        """
+        from kayigamba_david.throttle import ACCOUNT_LOCKOUT_THRESHOLD
+        attempts_to_warning = ACCOUNT_LOCKOUT_THRESHOLD - 2  # leaves 2 remaining
+        for _ in range(attempts_to_warning):
+            self._post()
+        r = self._post()
+        self.assertContains(r, 'remaining')
+
+    # ── isolation between accounts ────────────────────────────────────────────
+
+    def test_lockout_is_scoped_to_username(self):
+        """
+        Locking out 'victim' must not affect 'innocent' — lockouts are
+        per-account, not system-wide.
+        """
+        innocent = create_user(username='innocent', email='ok@test.com')
+        self._exhaust_attempts(username='victim')
+
+        r = self._post(username='innocent', password='StrongPass123!', ip='10.0.0.1')
+        self.assertRedirects(r, reverse('kayigamba_david:dashboard'))
+
+    # ── IP-level lockout ──────────────────────────────────────────────────────
+
+    def test_ip_lockout_after_spray_attack(self):
+        """
+        A single IP submitting IP_LOCKOUT_THRESHOLD failures across different
+        usernames must be blocked — covers credential-spray attacks.
+        """
+        from kayigamba_david.throttle import IP_LOCKOUT_THRESHOLD
+        for i in range(IP_LOCKOUT_THRESHOLD):
+            self._post(username=f'spray_target_{i}', ip='5.5.5.5')
+
+        r = self._post(username='victim', password='wrong', ip='5.5.5.5')
+        self.assertContains(r, 'locked')
+
+    def test_different_ip_not_affected_by_ip_lockout(self):
+        """
+        IP lockout on 5.5.5.5 must not block requests from 6.6.6.6.
+        """
+        from kayigamba_david.throttle import IP_LOCKOUT_THRESHOLD
+        for i in range(IP_LOCKOUT_THRESHOLD):
+            self._post(username=f'spray_{i}', ip='5.5.5.5')
+
+        r = self._post(username='victim', password='StrongPass123!', ip='6.6.6.6')
+        self.assertRedirects(r, reverse('kayigamba_david:dashboard'))
+
+    # ── counter reset on success ──────────────────────────────────────────────
+
+    def test_failure_counter_cleared_after_successful_login(self):
+        """
+        A successful login must delete in-window failure records for that
+        username so the user starts fresh on their next session.
+        """
+        from kayigamba_david.models import LoginAttempt
+        from django.utils import timezone
+        from datetime import timedelta
+        from kayigamba_david.throttle import LOCKOUT_WINDOW_MINUTES
+
+        self._post(password='wrong')
+        self._post(password='wrong')
+        self._post(password='StrongPass123!')  # success
+
+        window_start = timezone.now() - timedelta(minutes=LOCKOUT_WINDOW_MINUTES)
+        remaining_failures = LoginAttempt.objects.filter(
+            username='victim', succeeded=False, timestamp__gte=window_start,
+        ).count()
+        self.assertEqual(remaining_failures, 0)
+
+    # ── audit log ─────────────────────────────────────────────────────────────
+
+    def test_attempts_persisted_to_database(self):
+        """
+        Each attempt — success and failure alike — must create a LoginAttempt
+        row so the audit trail is complete.
+
+        Note: failures are checked BEFORE the successful login, because
+        clear_failures() removes in-window failure rows on success.  The
+        success row itself must still be present afterwards.
+        """
+        from kayigamba_david.models import LoginAttempt
+
+        self._post(password='wrong')
+        self._post(password='wrong')
+
+        # Verify failures are persisted before success clears them.
+        self.assertEqual(
+            LoginAttempt.objects.filter(username='victim', succeeded=False).count(), 2
+        )
+
+        self._post(password='StrongPass123!')
+
+        # After successful login, failure rows are cleared but success is kept.
+        self.assertEqual(
+            LoginAttempt.objects.filter(username='victim', succeeded=True).count(), 1
+        )
+
+    # ── lockout expiry ────────────────────────────────────────────────────────
+
+    def test_lockout_lifts_after_duration_expires(self):
+        """
+        After LOCKOUT_DURATION_MINUTES the lockout must expire and the user
+        must be able to log in normally.  We simulate expiry by backdating
+        the stored attempt timestamps.
+        """
+        from kayigamba_david.models import LoginAttempt
+        from django.utils import timezone
+        from datetime import timedelta
+        from kayigamba_david.throttle import LOCKOUT_DURATION_MINUTES, LOCKOUT_WINDOW_MINUTES
+
+        self._exhaust_attempts()
+
+        # Backdate all attempts to be older than both the window and the duration.
+        past = timezone.now() - timedelta(
+            minutes=max(LOCKOUT_WINDOW_MINUTES, LOCKOUT_DURATION_MINUTES) + 1
+        )
+        LoginAttempt.objects.filter(username='victim').update(timestamp=past)
+
+        r = self._post(password='StrongPass123!')
+        self.assertRedirects(r, reverse('kayigamba_david:dashboard'))
+        self.assertIn('_auth_user_id', self.client.session)
+
+
 # ── Password Reset ────────────────────────────────────────────────────────────
 
 class PasswordResetTests(TestCase):

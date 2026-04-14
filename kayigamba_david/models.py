@@ -29,6 +29,38 @@ class UserProfile(models.Model):
         ]
 
 
+# ── Brute-force: login attempt log ───────────────────────────────────────────
+
+class LoginAttempt(models.Model):
+    """
+    Persists every login attempt for brute-force detection.
+
+    Each row records who tried, from where, when, and whether they succeeded.
+    The throttle module queries this table to decide whether a request should
+    be blocked.  Using the database (rather than cache) keeps the audit trail
+    durable and the logic testable without a running cache server.
+    """
+    username   = models.CharField(max_length=150)
+    ip_address = models.GenericIPAddressField()
+    timestamp  = models.DateTimeField(auto_now_add=True)
+    succeeded  = models.BooleanField(default=False)
+
+    class Meta:
+        verbose_name        = 'Login Attempt'
+        verbose_name_plural = 'Login Attempts'
+        ordering            = ['-timestamp']
+        # Compound indexes speed up the two frequent queries:
+        # "failures for username in window" and "failures for IP in window".
+        indexes = [
+            models.Index(fields=['username',   'timestamp']),
+            models.Index(fields=['ip_address', 'timestamp']),
+        ]
+
+    def __str__(self):
+        status = 'OK' if self.succeeded else 'FAIL'
+        return f'{self.username} @ {self.ip_address} [{status}] {self.timestamp:%Y-%m-%d %H:%M}'
+
+
 # ── Signal: auto-assign Member group ─────────────────────────────────────────
 
 @receiver(post_save, sender=User)

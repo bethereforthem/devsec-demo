@@ -14,6 +14,7 @@ from .forms import (
 )
 from .models import UserProfile
 from .rbac import get_user_role, group_required, staff_required
+from .throttle import clear_failures, get_client_ip, get_lockout_status, record_attempt
 
 
 # ── Public views (authentication) ────────────────────────────────────────────
@@ -43,17 +44,46 @@ def register_view(request):
 
 def login_view(request):
     """
-    Handle user login using Django's AuthenticationForm, which validates
-    credentials and raises a ValidationError on failure — no manual checks needed.
+    Handle user login with brute-force protection.
+
+    Flow:
+    1. Authenticated users → redirect to dashboard (no re-login needed).
+    2. POST: extract username + IP, check lockout status BEFORE validating
+       credentials so a locked account is never probed further.
+    3. If not locked: validate credentials normally.
+       - Success → record attempt, clear old failures, redirect.
+       - Failure → record attempt, re-check status for updated count.
+    4. GET: render empty form.
+
+    The lockout_info dict from throttle.get_lockout_status() is passed to the
+    template so it can show a lockout message or a "X attempts remaining"
+    warning without any template-level logic about thresholds.
     """
     if request.user.is_authenticated:
         return redirect('kayigamba_david:dashboard')
 
+    lockout_info = None
+
     if request.method == 'POST':
+        username = request.POST.get('username', '').strip()
+        ip       = get_client_ip(request)
+        status   = get_lockout_status(username, ip)
+
+        if status['is_locked']:
+            # Block early — no credential validation, no new failure recorded.
+            # Rendering a blank form (not the submitted one) avoids echoing
+            # the attempted username back into the input field.
+            return render(request, 'kayigamba_david/login.html', {
+                'form':         CustomLoginForm(request),
+                'lockout_info': status,
+            })
+
         form = CustomLoginForm(request, data=request.POST)
         if form.is_valid():
             user = form.get_user()
             login(request, user)
+            record_attempt(username, ip, succeeded=True)
+            clear_failures(username, ip)
             messages.success(request, f'Welcome back, {user.username}!')
             # Honour ?next= only when it is a safe, same-host path.
             # startswith('/') is insufficient — //evil.com also starts with '/'
@@ -67,10 +97,17 @@ def login_view(request):
             ):
                 return redirect(next_url)
             return redirect('kayigamba_david:dashboard')
+        else:
+            record_attempt(username, ip, succeeded=False)
+            # Re-query so lockout_info reflects the attempt we just recorded.
+            lockout_info = get_lockout_status(username, ip)
     else:
         form = CustomLoginForm(request)
 
-    return render(request, 'kayigamba_david/login.html', {'form': form})
+    return render(request, 'kayigamba_david/login.html', {
+        'form':         form,
+        'lockout_info': lockout_info,
+    })
 
 
 @login_required

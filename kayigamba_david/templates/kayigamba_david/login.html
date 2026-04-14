@@ -59,6 +59,18 @@
   .btn-login:hover::before { left: 140%; }
   .btn-login:hover { background: linear-gradient(90deg, #3730a3 0%, #4f46e5 100%); box-shadow: 0 6px 20px rgba(79,70,229,.40); }
 
+  /* Lockout / warning banners */
+  .lockout-banner {
+    display: flex; align-items: flex-start; gap: .65rem;
+    border-radius: 8px; padding: .85rem 1rem;
+    font-size: .84rem; line-height: 1.5;
+    margin-bottom: 1.1rem;
+  }
+  .lockout-banner--error   { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+  .lockout-banner--warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+  .lockout-banner__icon { font-size: 1.1rem; flex-shrink: 0; margin-top: .05rem; }
+  .lockout-banner strong { font-weight: 700; }
+
   /* Footer link hover */
   .card__footer a {
     font-weight: 600;
@@ -93,6 +105,29 @@
 
     <div class="card login-card">
       <div class="card__body">
+
+        {# ── Brute-force feedback ── #}
+        {% if lockout_info %}
+          {% if lockout_info.is_locked %}
+            <div class="lockout-banner lockout-banner--error">
+              <span class="lockout-banner__icon">&#128274;</span>
+              <div>
+                <strong>Account temporarily locked.</strong><br>
+                Too many failed attempts. Please try again after
+                <strong>{{ lockout_info.lockout_until|time:"H:i" }}</strong>.
+              </div>
+            </div>
+          {% elif lockout_info.attempts_remaining <= 2 %}
+            <div class="lockout-banner lockout-banner--warning">
+              <span class="lockout-banner__icon">&#9888;</span>
+              <div>
+                <strong>{{ lockout_info.attempts_remaining }} attempt{{ lockout_info.attempts_remaining|pluralize }} remaining</strong>
+                before a temporary lockout is applied.
+              </div>
+            </div>
+          {% endif %}
+        {% endif %}
+
         <form method="post" novalidate>
           {% csrf_token %}
           <div class="form-stack">
