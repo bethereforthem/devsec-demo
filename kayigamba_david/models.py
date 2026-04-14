@@ -61,6 +61,62 @@ class LoginAttempt(models.Model):
         return f'{self.username} @ {self.ip_address} [{status}] {self.timestamp:%Y-%m-%d %H:%M}'
 
 
+# ── Audit logging: security-relevant events ──────────────────────────────────
+
+class AuditLog(models.Model):
+    """
+    Persistent audit trail for security-relevant events.
+    
+    Records what happened, who did it, when, why, and from where.
+    Sensitive data (passwords, tokens) is never logged.
+    Events include: registration, login/logout, password changes, permission changes.
+    """
+    # Event types
+    EVENT_REGISTRATION = 'registration'
+    EVENT_LOGIN_SUCCESS = 'login_success'
+    EVENT_LOGIN_FAILURE = 'login_failure'
+    EVENT_LOGOUT = 'logout'
+    EVENT_PASSWORD_CHANGE = 'password_change'
+    EVENT_PASSWORD_RESET_REQUEST = 'password_reset_request'
+    EVENT_PASSWORD_RESET_CONFIRM = 'password_reset_confirm'
+    EVENT_PERMISSION_GRANT = 'permission_grant'
+    EVENT_PERMISSION_REVOKE = 'permission_revoke'
+    
+    EVENT_CHOICES = [
+        (EVENT_REGISTRATION, 'User Registration'),
+        (EVENT_LOGIN_SUCCESS, 'Login Success'),
+        (EVENT_LOGIN_FAILURE, 'Login Failure'),
+        (EVENT_LOGOUT, 'Logout'),
+        (EVENT_PASSWORD_CHANGE, 'Password Change'),
+        (EVENT_PASSWORD_RESET_REQUEST, 'Password Reset Request'),
+        (EVENT_PASSWORD_RESET_CONFIRM, 'Password Reset Confirm'),
+        (EVENT_PERMISSION_GRANT, 'Permission Granted'),
+        (EVENT_PERMISSION_REVOKE, 'Permission Revoked'),
+    ]
+    
+    event_type = models.CharField(max_length=30, choices=EVENT_CHOICES, db_index=True)
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='audit_logs')
+    username = models.CharField(max_length=150, db_index=True)  # For tracking failed logins before user exists
+    ip_address = models.GenericIPAddressField()
+    user_agent = models.TextField(blank=True)  # Browser/client info for forensics
+    timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
+    description = models.TextField()  # Human-readable summary (no secrets)
+    details = models.JSONField(default=dict, blank=True)  # Structured metadata (no secrets)
+    
+    class Meta:
+        verbose_name = 'Audit Log'
+        verbose_name_plural = 'Audit Logs'
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['event_type', 'timestamp']),
+            models.Index(fields=['username', 'timestamp']),
+            models.Index(fields=['user', 'timestamp']),
+        ]
+    
+    def __str__(self):
+        return f'{self.event_type.upper()} | {self.username} @ {self.ip_address} | {self.timestamp:%Y-%m-%d %H:%M:%S}'
+
+
 # ── Signal: auto-assign Member group ─────────────────────────────────────────
 
 @receiver(post_save, sender=User)

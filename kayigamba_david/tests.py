@@ -1156,3 +1156,284 @@ class CSRFProtectionTests(TestCase):
         self.assertIn(csrf_processor, template_settings,
                       f'CSRF context processor must be in TEMPLATES context_processors. '
                       f'Current: {template_settings}')
+
+
+# ── Audit Logging ────────────────────────────────────────────────────────────
+
+class AuditLoggingTests(TestCase):
+    """Test that security-relevant events are logged without leaking secrets."""
+
+    def setUp(self):
+        """Create test user for login/logout tests."""
+        self.user = create_user(username='audituser', password='TestPass123!')
+        self.register_url = reverse('kayigamba_david:register')
+        self.login_url = reverse('kayigamba_david:login')
+        self.logout_url = reverse('kayigamba_david:logout')
+        self.password_change_url = reverse('kayigamba_david:change_password')
+        self.password_reset_url = reverse('kayigamba_david:password_reset')
+
+    def test_registration_is_logged(self):
+        """Registration event should create an AuditLog entry."""
+        from .models import AuditLog
+        
+        data = {
+            'username': 'newenduser',
+            'email': 'newend@example.com',
+            'password1': 'NewPass123!',
+            'password2': 'NewPass123!',
+        }
+        response = self.client.post(self.register_url, data)
+        
+        # Verify redirect to dashboard
+        self.assertEqual(response.status_code, 302)
+        
+        # Verify audit log entry
+        logs = AuditLog.objects.filter(
+            event_type=AuditLog.EVENT_REGISTRATION,
+            username='newenduser'
+        )
+        self.assertEqual(logs.count(), 1, 'Registration should create exactly one audit log entry')
+        
+        log = logs.first()
+        self.assertEqual(log.username, 'newenduser')
+        self.assertIsNotNone(log.ip_address)
+        self.assertIsNotNone(log.user_agent)
+        self.assertIn('registration', log.description.lower())
+        # Verify no password in the log
+        self.assertNotIn('password', log.description.lower())
+        self.assertNotIn('pass', log.description.lower())
+
+    def test_login_success_is_logged(self):
+        """Successful login should create an audit log entry."""
+        from .models import AuditLog
+        
+        data = {
+            'username': 'audituser',
+            'password': 'TestPass123!',
+        }
+        response = self.client.post(self.login_url, data)
+        
+        # Verify redirect to dashboard
+        self.assertRedirects(response, reverse('kayigamba_david:dashboard'))
+        
+        # Verify audit log entry
+        logs = AuditLog.objects.filter(
+            event_type=AuditLog.EVENT_LOGIN_SUCCESS,
+            username='audituser'
+        )
+        self.assertEqual(logs.count(), 1, 'Successful login should create exactly one audit log entry')
+        
+        log = logs.first()
+        self.assertEqual(log.username, 'audituser')
+        self.assertEqual(log.user.username, 'audituser')
+        self.assertIsNotNone(log.ip_address)
+        self.assertIn('success', log.description.lower())
+        # Verify no password in the log
+        self.assertNotIn('password', log.description.lower())
+        self.assertNotIn('pass', log.description.lower())
+
+    def test_login_failure_is_logged(self):
+        """Failed login attempt should create an audit log entry for failed login."""
+        from .models import AuditLog
+        
+        data = {
+            'username': 'audituser',
+            'password': 'WrongPassword',
+        }
+        response = self.client.post(self.login_url, data)
+        
+        # Verify form is re-rendered (not redirected)
+        self.assertEqual(response.status_code, 200)
+        
+        # Verify audit log entry exists for failed login
+        logs = AuditLog.objects.filter(
+            event_type=AuditLog.EVENT_LOGIN_FAILURE,
+            username='audituser'
+        )
+        self.assertGreater(logs.count(), 0, 'Failed login attempt should create audit log entry')
+        
+        log = logs.first()
+        self.assertEqual(log.username, 'audituser')
+        self.assertIsNone(log.user)  # Login failed, so no authenticated user
+        self.assertIsNotNone(log.ip_address)
+        self.assertIn('failed', log.description.lower())
+        # Verify no password in the log
+        self.assertNotIn('password', log.description.lower())
+        self.assertNotIn('wrong', log.description.lower())
+
+    def test_logout_is_logged(self):
+        """Logout should create an audit log entry."""
+        from .models import AuditLog
+        
+        # First, log in
+        self.client.login(username='audituser', password='TestPass123!')
+        
+        # Clear any previous logs
+        AuditLog.objects.all().delete()
+        
+        # Now log out
+        response = self.client.post(self.logout_url)
+        self.assertRedirects(response, self.login_url)
+        
+        # Verify audit log entry
+        logs = AuditLog.objects.filter(
+            event_type=AuditLog.EVENT_LOGOUT,
+            username='audituser'
+        )
+        self.assertEqual(logs.count(), 1, 'Logout should create exactly one audit log entry')
+        
+        log = logs.first()
+        self.assertEqual(log.username, 'audituser')
+        self.assertEqual(log.user.username, 'audituser')
+        self.assertIsNotNone(log.ip_address)
+        self.assertIn('logged out', log.description.lower())
+
+    def test_password_change_is_logged(self):
+        """Password change should create an audit log entry without logging the new password."""
+        from .models import AuditLog
+        
+        # First, log in
+        self.client.login(username='audituser', password='TestPass123!')
+        
+        # Clear any previous logs
+        AuditLog.objects.all().delete()
+        
+        # Change password
+        data = {
+            'old_password': 'TestPass123!',
+            'new_password1': 'NewPass456!',
+            'new_password2': 'NewPass456!',
+        }
+        response = self.client.post(self.password_change_url, data)
+        
+        # Verify redirect to profile
+        self.assertRedirects(response, reverse('kayigamba_david:profile'))
+        
+        # Verify audit log entry
+        logs = AuditLog.objects.filter(
+            event_type=AuditLog.EVENT_PASSWORD_CHANGE,
+            username='audituser'
+        )
+        self.assertEqual(logs.count(), 1, 'Password change should create exactly one audit log entry')
+        
+        log = logs.first()
+        self.assertEqual(log.username, 'audituser')
+        self.assertEqual(log.user.username, 'audituser')
+        self.assertIsNotNone(log.ip_address)
+        self.assertIn('password', log.description.lower())
+        # Verify no passwords in the log (old or new)
+        self.assertNotIn('TestPass123!', log.description)
+        self.assertNotIn('NewPass456!', log.description)
+        self.assertNotIn('old_password', log.description)
+        self.assertNotIn('new_password', log.description)
+
+    def test_password_reset_request_is_logged(self):
+        """Password reset request should be logged without exposing the email."""
+        from .models import AuditLog
+        
+        # Clear any previous logs
+        AuditLog.objects.all().delete()
+        
+        data = {
+            'email': 'audituser@example.com',
+        }
+        # Note: This uses the custom password reset view which logs the event
+        response = self.client.post(self.password_reset_url, data)
+        
+        # Password reset always redirects to done (doesn't confirm user exists)
+        self.assertRedirects(response, reverse('kayigamba_david:password_reset_done'))
+        
+        # Verify audit log entry
+        logs = AuditLog.objects.filter(
+            event_type=AuditLog.EVENT_PASSWORD_RESET_REQUEST
+        )
+        self.assertGreater(logs.count(), 0, 'Password reset request should create audit log entry')
+        
+        log = logs.first()
+        self.assertIsNotNone(log.ip_address)
+        self.assertIn('reset', log.description.lower())
+        # Email may be logged for forensics, but not the reset token
+        self.assertNotIn('token', log.description)
+
+    def test_audit_log_contains_ip_and_useragent(self):
+        """Audit logs should record IP address and user agent for forensics."""
+        from .models import AuditLog
+        
+        data = {
+            'username': 'audituser',
+            'password': 'TestPass123!',
+        }
+        response = self.client.post(self.login_url, data)
+        
+        log = AuditLog.objects.filter(username='audituser').first()
+        self.assertIsNotNone(log.ip_address)
+        # IP address should be a valid IPv4 or IPv6
+        self.assertRegex(log.ip_address, r'^\d+\.\d+\.\d+\.\d+$|^[a-f0-9:]+$|^unknown$')
+        # User-Agent may be empty in test client, but field should exist
+        self.assertIsNotNone(log.user_agent)
+
+    def test_audit_log_has_structured_data(self):
+        """Audit logs should have structured details field for complex data."""
+        from .models import AuditLog
+        
+        data = {
+            'username': 'audituser',
+            'password': 'TestPass123!',
+        }
+        self.client.post(self.login_url, data)
+        
+        log = AuditLog.objects.filter(event_type=AuditLog.EVENT_LOGIN_SUCCESS).first()
+        self.assertIsNotNone(log.details)
+        # Details should be a dict with useful info
+        self.assertIn('is_staff', log.details)
+        self.assertIn('is_superuser', log.details)
+        # Verify no passwords in details
+        for key, value in log.details.items():
+            self.assertNotIn('password', str(key).lower())
+            self.assertNotIn('password', str(value).lower())
+
+    def test_audit_log_timestamp_is_recorded(self):
+        """Audit logs should have a timestamp for when the event occurred."""
+        from .models import AuditLog
+        from django.utils import timezone
+        
+        before = timezone.now()
+        
+        data = {
+            'username': 'audituser',
+            'password': 'TestPass123!',
+        }
+        self.client.post(self.login_url, data)
+        
+        after = timezone.now()
+        
+        log = AuditLog.objects.filter(event_type=AuditLog.EVENT_LOGIN_SUCCESS).first()
+        self.assertIsNotNone(log.timestamp)
+        self.assertGreaterEqual(log.timestamp, before)
+        self.assertLessEqual(log.timestamp, after)
+
+    def test_multiple_login_attempts_are_separately_logged(self):
+        """Each login attempt should create a separate log entry."""
+        from .models import AuditLog
+        
+        # Clear any previous logs
+        AuditLog.objects.all().delete()
+        
+        # First failed attempt
+        self.client.post(self.login_url, {'username': 'audituser', 'password': 'wrong'})
+        
+        # Second successful attempt
+        self.client.post(self.login_url, {'username': 'audituser', 'password': 'TestPass123!'})
+        
+        # Third logout
+        self.client.post(self.logout_url)
+        
+        # Verify all three events are logged separately
+        failure_logs = AuditLog.objects.filter(event_type=AuditLog.EVENT_LOGIN_FAILURE)
+        success_logs = AuditLog.objects.filter(event_type=AuditLog.EVENT_LOGIN_SUCCESS)
+        logout_logs = AuditLog.objects.filter(event_type=AuditLog.EVENT_LOGOUT)
+        
+        self.assertGreater(failure_logs.count(), 0)
+        self.assertEqual(success_logs.count(), 1)
+        self.assertEqual(logout_logs.count(), 1)
+

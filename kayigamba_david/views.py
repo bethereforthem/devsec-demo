@@ -2,9 +2,19 @@ from django.contrib import messages
 from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
+from django.contrib.auth.views import PasswordResetConfirmView, PasswordResetView
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 
+from .audit import (
+    log_login_failure,
+    log_login_success,
+    log_logout,
+    log_password_change,
+    log_password_reset_confirm,
+    log_password_reset_request,
+    log_registration,
+)
 from .forms import (
     CustomLoginForm,
     CustomPasswordChangeForm,
@@ -37,6 +47,7 @@ def register_view(request):
             user = form.save()
             UserProfile.objects.create(user=user)
             login(request, user)
+            log_registration(request, user)
             messages.success(request, f'Welcome, {user.username}! Your account has been created.')
             return redirect('kayigamba_david:dashboard')
     else:
@@ -87,6 +98,7 @@ def login_view(request):
             login(request, user)
             record_attempt(username, ip, succeeded=True)
             clear_failures(username, ip)
+            log_login_success(request, user)
             messages.success(request, f'Welcome back, {user.username}!')
             
             # SECURITY: Open Redirect Protection (CWE-601)
@@ -124,6 +136,7 @@ def login_view(request):
             return redirect('kayigamba_david:dashboard')
         else:
             record_attempt(username, ip, succeeded=False)
+            log_login_failure(request, username, 'invalid credentials')
             # Re-query so lockout_info reflects the attempt we just recorded.
             lockout_info = get_lockout_status(username, ip)
     else:
@@ -145,6 +158,8 @@ def logout_view(request):
     (CWE-601). No validation needed because there's no user input.
     """
     if request.method == 'POST':
+        user = request.user
+        log_logout(request, user)
         logout(request)
         messages.info(request, 'You have been logged out.')
         return redirect('kayigamba_david:login')
@@ -206,6 +221,7 @@ def change_password_view(request):
         if form.is_valid():
             user = form.save()
             update_session_auth_hash(request, user)
+            log_password_change(request, user)
             messages.success(request, 'Your password has been changed successfully.')
             return redirect('kayigamba_david:profile')
     else:
@@ -272,3 +288,37 @@ def admin_panel_view(request):
         'instructor_count': instructor_count,
         'member_count': member_count,
     })
+
+
+# ── Password reset views (custom subclasses for audit logging) ────────────────
+
+class CustomPasswordResetView(PasswordResetView):
+    """
+    Custom password reset request view that logs the reset request.
+    
+    SECURITY: Always shows success regardless of whether the email exists,
+    preventing user enumeration. Audit logging records the request attempt.
+    """
+    def form_valid(self, form):
+        email = form.cleaned_data.get('email', '')
+        # Try to find user by email for logging purposes
+        try:
+            user = User.objects.get(email=email)
+            username = user.username
+        except User.DoesNotExist:
+            username = f'(unknown: {email})'
+        
+        log_password_reset_request(self.request, username, email)
+        return super().form_valid(form)
+
+
+class CustomPasswordResetConfirmView(PasswordResetConfirmView):
+    """
+    Custom password reset confirm view that logs the confirmation.
+    
+    SECURITY: Records when a reset token is used for forensics.
+    """
+    def form_valid(self, form):
+        user = form.save()
+        log_password_reset_confirm(self.request, user)
+        return super().form_valid(form)
