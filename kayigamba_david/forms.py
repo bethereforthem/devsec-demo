@@ -1,6 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 from django.contrib.auth.models import User
+from django.utils.html import strip_tags
 
 from .models import UserProfile
 
@@ -67,6 +68,13 @@ class UserProfileForm(forms.ModelForm):
         widgets = {
             'bio': forms.Textarea(attrs={'rows': 4, 'placeholder': 'Tell us a little about yourself…'}),
         }
+
+    def clean_bio(self):
+        # SECURITY: Strip all HTML tags from bio before storing (defense-in-depth XSS).
+        # Django templates auto-escape output, but stripping tags at the storage layer
+        # ensures no raw HTML ever reaches the database — safe even if the value is
+        # later used in an email, API response, or template with |safe.
+        return strip_tags(self.cleaned_data.get('bio', ''))
 
 
 class UserUpdateForm(forms.ModelForm):

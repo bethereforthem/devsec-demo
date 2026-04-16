@@ -178,7 +178,6 @@ def dashboard_view(request):
 
 
 @login_required
-@login_required
 def profile_view(request):
     """
     Allow users to update their own User and UserProfile fields.
