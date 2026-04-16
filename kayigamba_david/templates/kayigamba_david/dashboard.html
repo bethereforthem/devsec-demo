@@ -1,0 +1,233 @@
+{% extends "kayigamba_david/base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Dashboard-page specifics ── */
+
+  /* Accent welcome banner */
+  .welcome-banner {
+    background: linear-gradient(120deg, #4f46e5 0%, #3730a3 60%, #312e81 100%);
+    border-radius: 12px;
+    padding: 1.75rem 2rem;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 6px 24px rgba(79,70,229,.30);
+    transition: box-shadow .3s ease;
+  }
+  .welcome-banner:hover { box-shadow: 0 10px 34px rgba(79,70,229,.42); }
+  .welcome-banner::before {
+    content: '';
+    position: absolute; top: -30px; right: -30px;
+    width: 140px; height: 140px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.06);
+    pointer-events: none;
+  }
+  .welcome-banner::after {
+    content: '';
+    position: absolute; bottom: -40px; right: 80px;
+    width: 100px; height: 100px;
+    border-radius: 50%;
+    background: rgba(255,255,255,.04);
+    pointer-events: none;
+  }
+  .welcome-banner__title { font-size: 1.35rem; font-weight: 700; margin-bottom: .2rem; }
+  .welcome-banner__sub   { font-size: .875rem; opacity: .8; }
+  .welcome-banner__badge {
+    background: rgba(255,255,255,.15);
+    border: 1px solid rgba(255,255,255,.25);
+    padding: .35rem .9rem;
+    border-radius: 99px;
+    font-size: .78rem;
+    font-weight: 600;
+    letter-spacing: .4px;
+    backdrop-filter: blur(4px);
+    transition: background .2s;
+  }
+  .welcome-banner:hover .welcome-banner__badge { background: rgba(255,255,255,.22); }
+
+  /* Stat cards with coloured left border accent */
+  .stat-card { border-left: 3px solid transparent; }
+  .stat-card:nth-child(1) { border-left-color: #4f46e5; }
+  .stat-card:nth-child(2) { border-left-color: #059669; }
+  .stat-card:nth-child(3) { border-left-color: #d97706; }
+  .stat-card:nth-child(4) { border-left-color: #0891b2; }
+
+  /* Card hover lift on detail cards */
+  .detail-card {
+    transition: box-shadow .28s ease, transform .28s ease;
+  }
+  .detail-card:hover { box-shadow: 0 8px 30px rgba(0,0,0,.12); transform: translateY(-2px); }
+
+  /* Table rows pulse on hover */
+  .info-table tr { cursor: default; }
+  .info-table tr:hover td { background: #f5f3ff; }
+  .info-table td:last-child { font-weight: 500; color: #1f2937; }
+
+  /* Action items — richer arrow */
+  .action-item__arrow { font-size: 1.1rem; }
+</style>
+
+<div class="container">
+
+  <!-- Welcome banner -->
+  <div class="welcome-banner">
+    <div>
+      <div class="welcome-banner__title">
+        Hello, {{ user.get_full_name|default:user.username }} &#128075;
+      </div>
+      <div class="welcome-banner__sub">
+        Signed in as <strong>{{ user.username }}</strong> &mdash; {{ user.email|default:"no email set" }}
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; align-items:flex-end; gap:.4rem;">
+      <span class="welcome-banner__badge">&#10003;&nbsp; Authenticated</span>
+      {# Role shown in the banner — source: rbac_context processor #}
+      <span style="font-size:.72rem; opacity:.75; letter-spacing:.5px; text-transform:uppercase; font-weight:600;">
+        Role: {{ user_role }}
+      </span>
+    </div>
+  </div>
+
+  <!-- Stats row -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-card__icon">&#128100;</div>
+      <div class="stat-card__label">Username</div>
+      <div class="stat-card__value" style="font-size:1.05rem;">{{ user.username }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__icon">&#128197;</div>
+      <div class="stat-card__label">Member since</div>
+      <div class="stat-card__value" style="font-size:1rem;">{{ user.date_joined|date:"M Y" }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__icon">&#128336;</div>
+      <div class="stat-card__label">Last login</div>
+      <div class="stat-card__value" style="font-size:.9rem;">{{ user.last_login|date:"M j, Y"|default:"—" }}</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__icon">&#9989;</div>
+      <div class="stat-card__label">Status</div>
+      <div class="stat-card__value" style="font-size:.9rem;">
+        {% if user.is_active %}
+          <span class="badge badge-success">Active</span>
+        {% else %}
+          <span class="badge badge-info">Inactive</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Two-column detail + actions -->
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.25rem;">
+
+    <!-- Account details -->
+    <div class="card detail-card">
+      <div class="card__header">
+        <h2 class="section-title" style="margin:0;">&#128211; Account Details</h2>
+      </div>
+      <div class="card__body" style="padding-top:.9rem; padding-bottom:.9rem;">
+        <table class="info-table">
+          <tr>
+            <td>Full name</td>
+            <td>{{ user.get_full_name|default:"—" }}</td>
+          </tr>
+          <tr>
+            <td>Email</td>
+            <td>{{ user.email|default:"—" }}</td>
+          </tr>
+          <tr>
+            <td>Joined</td>
+            <td>{{ user.date_joined|date:"N j, Y" }}</td>
+          </tr>
+          <tr>
+            <td>Last login</td>
+            <td>{{ user.last_login|date:"N j, Y, g:i a"|default:"—" }}</td>
+          </tr>
+          {% if user.profile.bio %}
+          <tr>
+            <td>Bio</td>
+            <td>{{ user.profile.bio }}</td>
+          </tr>
+          {% endif %}
+          <tr>
+            <td>Staff</td>
+            <td>{% if user.is_staff %}<span class="badge badge-purple">Yes</span>{% else %}No{% endif %}</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- Quick actions -->
+    <div class="card detail-card">
+      <div class="card__header">
+        <h2 class="section-title" style="margin:0;">&#9889; Quick Actions</h2>
+      </div>
+      <div class="card__body" style="padding-top:.9rem; padding-bottom:.9rem;">
+        <div class="action-list">
+          {# All authenticated users (Member and above) #}
+          <a href="{% url 'kayigamba_david:profile' %}" class="action-item" title="Update your name, email and bio">
+            <div class="action-item__left">
+              <div class="action-item__icon action-item__icon--purple">&#9998;</div>
+              <div>
+                <div class="action-item__title">Edit Profile</div>
+                <div class="action-item__desc">Update your name, email and bio</div>
+              </div>
+            </div>
+            <span class="action-item__arrow">&#8250;</span>
+          </a>
+          <a href="{% url 'kayigamba_david:change_password' %}" class="action-item">
+            <div class="action-item__left">
+              <div class="action-item__icon action-item__icon--green">&#128274;</div>
+              <div>
+                <div class="action-item__title">Change Password</div>
+                <div class="action-item__desc">Keep your account secure</div>
+              </div>
+            </div>
+            <span class="action-item__arrow">&#8250;</span>
+          </a>
+
+          {# Instructor panel — only shown to Instructor role and above #}
+          {% if is_instructor_plus %}
+          <a href="{% url 'kayigamba_david:instructor_panel' %}" class="action-item" style="border-color:#bfdbfe;">
+            <div class="action-item__left">
+              <div class="action-item__icon" style="background:#dbeafe;">&#127979;</div>
+              <div>
+                <div class="action-item__title" style="color:#1e40af;">Instructor Panel</div>
+                <div class="action-item__desc">View and manage learner accounts</div>
+              </div>
+            </div>
+            <span class="action-item__arrow">&#8250;</span>
+          </a>
+          {% endif %}
+
+          {# Admin panel — only shown to Admin / staff #}
+          {% if is_admin %}
+          <a href="{% url 'kayigamba_david:admin_panel' %}" class="action-item" style="border-color:#fbcfe8;">
+            <div class="action-item__left">
+              <div class="action-item__icon" style="background:#fce7f3;">&#9881;</div>
+              <div>
+                <div class="action-item__title" style="color:#9d174d;">Admin Panel</div>
+                <div class="action-item__desc">Full user management &amp; system overview</div>
+              </div>
+            </div>
+            <span class="action-item__arrow">&#8250;</span>
+          </a>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+{% endblock %}

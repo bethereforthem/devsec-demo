@@ -1,22 +1,33 @@
 """
 URL configuration for devsec_demo project.
-
-The `urlpatterns` list routes URLs to views. For more information please see:
-    https://docs.djangoproject.com/en/6.0/topics/http/urls/
-Examples:
-Function views
-    1. Add an import:  from my_app import views
-    2. Add a URL to urlpatterns:  path('', views.home, name='home')
-Class-based views
-    1. Add an import:  from other_app.views import Home
-    2. Add a URL to urlpatterns:  path('', Home.as_view(), name='home')
-Including another URLconf
-    1. Import the include() function: from django.urls import include, path
-    2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path
+from django.urls import include, path
+from django.views.generic import RedirectView
+
+# Convenience redirect aliases — these short paths redirect to the canonical
+# /auth/... URLs so that typing /dashboard/, /login/, etc. in the browser
+# still works without breaking the namespaced URL structure.
+_R = RedirectView.as_view  # shorthand
 
 urlpatterns = [
+    # ── Django admin ────────────────────────────────────────────────
     path('admin/', admin.site.urls),
+
+    # ── App (canonical URLs under /auth/) ───────────────────────────
+    path('auth/', include('kayigamba_david.urls', namespace='kayigamba_david')),
+
+    # ── Root ────────────────────────────────────────────────────────
+    path('', _R(url='/auth/login/', permanent=False)),
+
+    # ── Short-URL aliases (redirect to canonical) ───────────────────
+    path('login/',           _R(url='/auth/login/',           permanent=False)),
+    path('logout/',          _R(url='/auth/logout/',          permanent=False)),
+    path('register/',        _R(url='/auth/register/',        permanent=False)),
+    path('dashboard/',       _R(url='/auth/dashboard/',       permanent=False)),
+    path('profile/',         _R(url='/auth/profile/',         permanent=False)),
+    path('change-password/', _R(url='/auth/password/change/', permanent=False)),
+    path('reset-password/',  _R(url='/auth/password/reset/', permanent=False)),
+    path('instructor/',      _R(url='/auth/instructor/',      permanent=False)),
+    path('admin-panel/',     _R(url='/auth/admin-panel/',     permanent=False)),
 ]

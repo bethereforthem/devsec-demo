@@ -1,0 +1,87 @@
+{% extends "kayigamba_david/base.html" %}
+{% block title %}Sign Out{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Logout-page specifics ── */
+  .logout-card { transition: box-shadow .3s ease, transform .3s ease; }
+  .logout-card:hover { box-shadow: 0 10px 36px rgba(220,38,38,.12); transform: translateY(-3px); }
+
+  .logout-icon {
+    font-size: 2.75rem;
+    display: block;
+    margin-bottom: .9rem;
+    transition: transform .2s;
+    cursor: default;
+  }
+  .logout-icon:hover { transform: scale(1.12) rotate(-6deg); }
+
+  /* Danger button shimmer */
+  .btn-logout-confirm {
+    position: relative; overflow: hidden;
+    background: linear-gradient(90deg, #dc2626 0%, #b91c1c 100%);
+    border: none; color: #fff;
+  }
+  .btn-logout-confirm::before {
+    content: ''; position: absolute; top: 0; left: -100%; width: 60%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.14), transparent);
+    transition: left .5s;
+  }
+  .btn-logout-confirm:hover::before { left: 140%; }
+  .btn-logout-confirm:hover { background: linear-gradient(90deg, #b91c1c 0%, #dc2626 100%); box-shadow: 0 6px 20px rgba(220,38,38,.35); }
+
+  /* Stay signed in button */
+  .btn-stay { transition: background .18s, border-color .18s, box-shadow .18s, transform .18s; }
+  .btn-stay:hover { background: #f0fdf4; border-color: #6ee7b7; color: #065f46; transform: translateY(-1px); box-shadow: 0 3px 10px rgba(5,150,105,.15); }
+
+  /* User chip */
+  .user-chip {
+    display: inline-flex; align-items: center; gap: .5rem;
+    background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 99px;
+    padding: .3rem .8rem; font-size: .85rem; font-weight: 500;
+    margin-top: .65rem;
+    transition: background .18s, border-color .18s;
+  }
+  .user-chip:hover { background: #e0e7ff; border-color: #c7d2fe; }
+  .user-chip-avatar {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: linear-gradient(135deg, #4f46e5, #3730a3);
+    color: #fff; font-size: .68rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+</style>
+
+<div class="auth-wrap">
+  <div class="auth-card" style="max-width:420px;">
+    <div class="card logout-card" style="text-align:center;">
+      <div class="card__body" style="padding:2.5rem 2rem 2rem;">
+
+        <span class="logout-icon">&#128682;</span>
+
+        <h1 class="page-title">Sign out of SYS_UAS?</h1>
+        <p class="page-subtitle" style="margin-top:.4rem;">
+          You'll need to sign in again to access your account.
+        </p>
+
+        <div class="user-chip">
+          <div class="user-chip-avatar">{{ user.username|first|upper }}</div>
+          {{ user.username }}
+        </div>
+
+        <div class="btn-group" style="justify-content:center; margin-top:1.75rem;">
+          <form method="post" action="{% url 'kayigamba_david:logout' %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-logout-confirm">
+              Yes, sign me out
+            </button>
+          </form>
+          <a href="{% url 'kayigamba_david:dashboard' %}" class="btn btn-secondary btn-stay">
+            Stay signed in
+          </a>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

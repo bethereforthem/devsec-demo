@@ -1,0 +1,178 @@
+{% extends "kayigamba_david/base.html" %}
+{% block title %}Sign In{% endblock %}
+
+{% block content %}
+<style>
+  /* ── Login-page specifics ── */
+  .login-hero {
+    text-align: center;
+    margin-bottom: 1.75rem;
+  }
+  .login-icon-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 58px; height: 58px;
+    background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+    border-radius: 16px;
+    box-shadow: 0 6px 20px rgba(79,70,229,.40);
+    margin-bottom: 1rem;
+    transition: transform .2s, box-shadow .2s;
+    cursor: default;
+  }
+  .login-icon-wrap:hover { transform: rotate(-6deg) scale(1.08); box-shadow: 0 10px 28px rgba(79,70,229,.50); }
+
+  /* Floating card effect on hover */
+  .login-card { transition: box-shadow .3s ease, transform .3s ease; }
+  .login-card:hover { box-shadow: 0 10px 40px rgba(79,70,229,.14); transform: translateY(-3px); }
+
+  /* Input icon wrapper */
+  .input-wrap { position: relative; }
+  .input-icon {
+    position: absolute;
+    top: 50%; left: .75rem;
+    transform: translateY(-50%);
+    color: #9ca3af;
+    pointer-events: none;
+    font-size: .95rem;
+    transition: color .18s;
+  }
+  .input-wrap input { padding-left: 2.3rem; }
+  .input-wrap:focus-within .input-icon { color: #4f46e5; }
+
+  /* Submit button shimmer */
+  .btn-login {
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(90deg, #4f46e5 0%, #3730a3 100%);
+    border: none;
+    color: #fff;
+  }
+  .btn-login::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -100%;
+    width: 60%; height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,.15), transparent);
+    transition: left .5s ease;
+  }
+  .btn-login:hover::before { left: 140%; }
+  .btn-login:hover { background: linear-gradient(90deg, #3730a3 0%, #4f46e5 100%); box-shadow: 0 6px 20px rgba(79,70,229,.40); }
+
+  /* Lockout / warning banners */
+  .lockout-banner {
+    display: flex; align-items: flex-start; gap: .65rem;
+    border-radius: 8px; padding: .85rem 1rem;
+    font-size: .84rem; line-height: 1.5;
+    margin-bottom: 1.1rem;
+  }
+  .lockout-banner--error   { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+  .lockout-banner--warning { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+  .lockout-banner__icon { font-size: 1.1rem; flex-shrink: 0; margin-top: .05rem; }
+  .lockout-banner strong { font-weight: 700; }
+
+  /* Footer link hover */
+  .card__footer a {
+    font-weight: 600;
+    color: #4f46e5;
+    position: relative;
+    transition: color .18s;
+  }
+  .card__footer a::after {
+    content: '';
+    position: absolute;
+    bottom: -1px; left: 0; right: 100%;
+    height: 1.5px;
+    background: #4f46e5;
+    transition: right .2s ease;
+  }
+  .card__footer a:hover { color: #3730a3; text-decoration: none; }
+  .card__footer a:hover::after { right: 0; }
+</style>
+
+<div class="auth-wrap">
+  <div class="auth-card">
+
+    <div class="login-hero">
+      <div class="login-icon-wrap">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="white">
+          <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/>
+        </svg>
+      </div>
+      <h1 class="page-title">Welcome back</h1>
+      <p class="page-subtitle">Sign in to your SYS_UAS account</p>
+    </div>
+
+    <div class="card login-card">
+      <div class="card__body">
+
+        {# ── Brute-force feedback ── #}
+        {% if lockout_info %}
+          {% if lockout_info.is_locked %}
+            <div class="lockout-banner lockout-banner--error">
+              <span class="lockout-banner__icon">&#128274;</span>
+              <div>
+                <strong>Account temporarily locked.</strong><br>
+                Too many failed attempts. Please try again after
+                <strong>{{ lockout_info.lockout_until|time:"H:i" }}</strong>.
+              </div>
+            </div>
+          {% elif lockout_info.attempts_remaining <= 2 %}
+            <div class="lockout-banner lockout-banner--warning">
+              <span class="lockout-banner__icon">&#9888;</span>
+              <div>
+                <strong>{{ lockout_info.attempts_remaining }} attempt{{ lockout_info.attempts_remaining|pluralize }} remaining</strong>
+                before a temporary lockout is applied.
+              </div>
+            </div>
+          {% endif %}
+        {% endif %}
+
+        <form method="post" novalidate>
+          {% csrf_token %}
+          <div class="form-stack">
+
+            <div class="form-group">
+              <label for="{{ form.username.id_for_label }}">Username</label>
+              <div class="input-wrap">
+                <span class="input-icon">&#128100;</span>
+                {{ form.username }}
+              </div>
+              {% if form.username.errors %}
+                <ul class="errorlist">{% for e in form.username.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+              {% endif %}
+            </div>
+
+            <div class="form-group">
+              <label for="{{ form.password.id_for_label }}">Password</label>
+              <div class="input-wrap">
+                <span class="input-icon">&#128274;</span>
+                {{ form.password }}
+              </div>
+              {% if form.password.errors %}
+                <ul class="errorlist">{% for e in form.password.errors %}<li>{{ e }}</li>{% endfor %}</ul>
+              {% endif %}
+            </div>
+
+            {% if form.non_field_errors %}
+              <div class="flash flash-error" style="margin:0;">
+                &#9888; {% for e in form.non_field_errors %}{{ e }}{% endfor %}
+              </div>
+            {% endif %}
+
+            <button type="submit" class="btn btn-login btn-full" style="margin-top:.2rem;">
+              Sign In &nbsp;&rarr;
+            </button>
+
+          </div>
+        </form>
+      </div>
+      <div class="card__footer" style="display:flex; justify-content:space-between; flex-wrap:wrap; gap:.4rem;">
+        <span>No account yet? <a href="{% url 'kayigamba_david:register' %}">Create one free</a></span>
+        <a href="{% url 'kayigamba_david:password_reset' %}">Forgot password?</a>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

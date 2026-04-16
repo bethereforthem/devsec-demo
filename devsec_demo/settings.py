@@ -27,9 +27,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.environ.get('DJANGO_DEBUG')
+DEBUG = os.environ.get('DJANGO_DEBUG', 'False').strip().lower() in ('true', '1', 'yes')
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost']
 
 
 # Application definition
@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'kayigamba_david',
 ]
 
 MIDDLEWARE = [
@@ -65,6 +66,11 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # CSRF token context processor — makes csrf_token variable available in templates.
+                # Required for proper CSRF protection, especially for manual token rendering.
+                'django.template.context_processors.csrf',
+                # Injects user_role, is_instructor_plus, is_admin into every template.
+                'kayigamba_david.rbac.rbac_context',
             ],
         },
     },
@@ -119,3 +125,92 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# ── Email ─────────────────────────────────────────────────────────────────────
+# Uses SMTP backend when EMAIL_HOST_USER is set (real email delivery).
+# Falls back to console backend for local dev when no SMTP credentials exist.
+_email_host_user = os.environ.get('EMAIL_HOST_USER', '')
+EMAIL_BACKEND = os.environ.get(
+    'DJANGO_EMAIL_BACKEND',
+    'django.core.mail.backends.smtp.EmailBackend' if _email_host_user
+    else 'django.core.mail.backends.console.EmailBackend',
+)
+EMAIL_HOST          = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT          = int(os.environ.get('EMAIL_PORT', '587'))
+EMAIL_USE_TLS       = os.environ.get('EMAIL_USE_TLS', 'True').strip().lower() in ('true', '1', 'yes')
+EMAIL_HOST_USER     = _email_host_user
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL  = os.environ.get('DJANGO_DEFAULT_FROM_EMAIL', f'SYS_UAS <{_email_host_user}>' if _email_host_user else 'SYS_UAS <noreply@sys-uas.local>')
+
+# Reset tokens expire after 1 hour.  Django's default is 3 days (259 200 s).
+# A shorter window limits exposure if a reset link is forwarded or cached.
+PASSWORD_RESET_TIMEOUT = int(os.environ.get('DJANGO_PASSWORD_RESET_TIMEOUT', '3600'))
+
+# ── Authentication redirects ──────────────────────────────────────────────────
+# LOGIN_URL: where @login_required sends unauthenticated users.
+LOGIN_URL = '/auth/login/'
+# LOGIN_REDIRECT_URL: fallback redirect after login when no ?next= param.
+LOGIN_REDIRECT_URL = '/auth/dashboard/'
+# LOGOUT_REDIRECT_URL: where to send users after logout (not used by our view,
+# but good practice to set for any third-party middleware).
+LOGOUT_REDIRECT_URL = '/auth/login/'
+
+# ── Default primary key ───────────────────────────────────────────────────────
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# ── Security headers (safe in ALL environments — dev and production) ──────────
+#
+# SECURE_CONTENT_TYPE_NOSNIFF: Sets "X-Content-Type-Options: nosniff".
+#   Prevents the browser from MIME-sniffing a response away from the declared
+#   content-type. Stops certain XSS vectors via crafted file uploads.
+SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# X_FRAME_OPTIONS: Sets "X-Frame-Options: DENY" on every response.
+#   Prevents this site from being embedded in an <iframe>, blocking
+#   clickjacking attacks. DENY is stricter than SAMEORIGIN.
+X_FRAME_OPTIONS = 'DENY'
+
+# SECURE_REFERRER_POLICY: Controls what Referer header is sent cross-origin.
+#   "strict-origin-when-cross-origin" sends the full URL within the same origin,
+#   but only the origin (no path/query) to other sites. This prevents leaking
+#   password-reset tokens or other path-based secrets to third-party servers.
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+
+# SESSION_COOKIE_HTTPONLY: JS cannot read the session cookie.
+#   Prevents XSS-based session theft — even if an attacker injects JS, they
+#   cannot exfiltrate the session cookie. (Django default is already True.)
+SESSION_COOKIE_HTTPONLY = True
+
+# SESSION_COOKIE_SAMESITE: Mitigates CSRF by limiting cookie delivery.
+#   'Lax' allows the cookie on top-level GET navigations (e.g. clicking a link)
+#   but blocks it on cross-origin POST — the common CSRF attack vector.
+SESSION_COOKIE_SAMESITE = 'Lax'
+
+# CSRF_COOKIE_HTTPONLY: JS cannot read the CSRF cookie.
+#   Safe here because all forms use {% csrf_token %} (server-side rendering).
+#   No JavaScript in this project reads the CSRF cookie directly.
+CSRF_COOKIE_HTTPONLY = True
+
+# CSRF_COOKIE_SAMESITE: CSRF cookie follows the same Lax policy as session.
+CSRF_COOKIE_SAMESITE = 'Lax'
+
+# ── HTTPS-only settings (PRODUCTION only — disabled in DEBUG mode) ─────────────
+#
+# These settings require HTTPS to be available. Enabling them in development
+# (where the server runs on plain HTTP) would lock you out of your own site.
+# They are activated automatically when DJANGO_DEBUG=False.
+#
+if not DEBUG:
+    # Redirect all HTTP requests to HTTPS.
+    SECURE_SSL_REDIRECT = True
+
+    # HSTS: instructs browsers to always connect over HTTPS for 1 year.
+    # IMPORTANT: Only enable SECURE_HSTS_PRELOAD after the site is fully
+    # on HTTPS. Submitting to the preload list is irreversible for ~1 year.
+    SECURE_HSTS_SECONDS            = 31536000   # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True        # applies to *.yourdomain.com
+    SECURE_HSTS_PRELOAD            = True        # opt into browser preload lists
+
+    # Ensure session and CSRF cookies are only sent over HTTPS connections.
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE    = True
